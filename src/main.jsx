@@ -145,6 +145,22 @@ function App(){
         localStorage.setItem(resetKey,"1");
       }
     }catch{}
+    // Recover document metadata directly from private Supabase Storage for older packs
+    // whose database metadata predates uploadedFiles persistence.
+    const recovered=await Promise.all(nextPacks.map(async pack=>{
+      if(Array.isArray(pack.uploadedFiles)&&pack.uploadedFiles.length)return pack;
+      try{
+        const storageResponse=await fetch("/api/storage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"list-pack",packId:pack.id})});
+        const storageData=await storageResponse.json();
+        if(storageResponse.ok&&Array.isArray(storageData.files)&&storageData.files.length){
+          const recoveredPack={...pack,uploadedFiles:storageData.files,docs:Math.max(Number(pack.docs)||0,storageData.files.length)};
+          await fetch("/api/packs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(recoveredPack)});
+          return recoveredPack;
+        }
+      }catch{}
+      return pack;
+    }));
+    nextPacks=recovered;
     setLivePacks(nextPacks);
     // Backfill document metadata to Supabase for packs restored from local browser storage.
     const restoredWithDocuments=nextPacks.filter(pack=>{
