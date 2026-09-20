@@ -716,24 +716,32 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
  </div>;
 
  return <section className="review-page">
-   <button className="back review-back" onClick={back}>← Back to inbox</button>
    <div className="review-head">
-     <div>
-       <div className="eyebrow">{pack.id} · {pack.ticket}</div>
-       <h1>{pack.customer}</h1>
+     <div className="review-head-top">
+       <div className="review-title-block">
+         <button className="review-back-compact" onClick={back}>← Inbox</button>
+         <div className="review-title">
+           <div className="eyebrow">{pack.id} · {pack.ticket}</div>
+           <h1>{pack.customer}</h1>
+         </div>
+       </div>
+       <div className="review-owner-bar">
+         <span>Owner</span>
+         <select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}>
+           <option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option>
+         </select>
+       </div>
      </div>
-     <div className="review-actions">
-       <select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}>
-         <option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option>
-       </select>
-       <Status status={pack.status}/>
-       <button className="secondary" onClick={()=>reprocessPack?.(pack)}>Re-process</button>
-       <button className="secondary" onClick={validatePack}>Validate data</button>
-       <button className={pack.status==="Ready"?"primary":"secondary"} onClick={postToLCA}>Post to LCA</button>
+     <div className="review-head-bottom">
+       <div className="review-status-group"><Status status={pack.status}/><span className="review-ticket-meta">{documentLabel(Number(pack.docs)||0)} · received {formatReceived(pack.received)}</span></div>
+       <div className="review-actions">
+         <button className="secondary" onClick={()=>reprocessPack?.(pack)}>Re-process</button>
+         <button className="secondary" onClick={validatePack}>Validate data</button>
+         <button className={pack.status==="Ready"?"primary":"secondary"} onClick={postToLCA}>Post to LCA</button>
+       </div>
      </div>
    </div>
    <div className="review-preview-toggle-row">
-     <div className="review-meta-row">{documentLabel(Number(pack.docs)||0)} · received {formatReceived(pack.received)}</div>
      <label className="review-preview-toggle"><input type="checkbox" checked={showPreview} onChange={e=>setShowPreview(e.target.checked)}/><span className="review-toggle-track"><i></i></span><span>Show preview</span></label>
      <button className="secondary review-fit-btn" onClick={()=>setReviewSplit(50)}>Reset split</button>
    </div>
