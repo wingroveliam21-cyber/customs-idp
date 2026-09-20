@@ -597,7 +597,7 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
      const divider=18;
      const left=rect.left+(rect.width*(reviewSplit/100))+divider;
      const width=Math.max(280,rect.width-(rect.width*(reviewSplit/100))-divider);
-     setPreviewFixedStyle({position:"fixed",left:`${left}px`,top:"76px",width:`${width}px`,height:"calc(100vh - 92px)",zIndex:20});
+     setPreviewFixedStyle({position:"fixed",left:`${left}px`,top:"176px",width:`${width}px`,height:"calc(100vh - 188px)",zIndex:20});
    };
    updatePreviewPosition();
    window.addEventListener("resize",updatePreviewPosition);
