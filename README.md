@@ -21,6 +21,24 @@ npm install
 npm run dev
 ```
 
+`npm run dev` now includes a local adapter for the extraction and pack endpoints in
+`api/`, so it can use your `.env` without a Vercel project. If you want to test the
+functions through Vercel's own runtime instead, use:
+
+```bash
+npm run dev:vercel
+```
+
+Add `OPENAI_API_KEY=...` to `.env` before starting Vercel Dev. The extraction flow
+posts the selected document as base64 to `/api/extract`; that function sends the file
+to the OpenAI Responses API with a structured JSON schema, then the UI saves the
+result through `/api/packs`. Supabase variables are only needed for persistent pack
+storage; without them the UI keeps its local browser fallback.
+
+Pack deletion is currently restricted to the manager/admin test role in the UI and
+API. This is a prototype guard only; production deletion must use server-validated
+authentication before the endpoint is exposed publicly.
+
 ## Build
 
 ```bash

@@ -17,6 +17,16 @@ export default async function handler(req,res){
       return res.status(200).json({pack:normalizePack(row)});
     }catch(error){return res.status(503).json({error:error.message});}
   }
+  if(req.method==="DELETE"){
+    try{
+      const role=String(req.headers?.["x-user-role"]||"").toLowerCase();
+      if(!["manager","admin"].includes(role)) return res.status(403).json({error:"Only managers can delete packs"});
+      const id=String(req.query?.id||"").trim();
+      if(!id) return res.status(400).json({error:"Pack id is required"});
+      await supabaseFetch(`document_packs?id=eq.${encodeURIComponent(id)}`,{method:"DELETE",headers:{"Prefer":"return=minimal"}});
+      return res.status(200).json({deleted:id});
+    }catch(error){return res.status(503).json({error:error.message});}
+  }
   return res.status(405).json({error:"Method not allowed"});
 }
 async function supabaseFetch(path,options={}){

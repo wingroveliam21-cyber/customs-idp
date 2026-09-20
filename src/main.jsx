@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   Activity, AlertCircle, ArrowRight, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, FileText,
   Inbox, Mail, Menu, MoreHorizontal, Package, Plus, Search,
-  Settings, ShieldCheck, Sparkles, Users, X, Zap
+  Settings, ShieldCheck, Sparkles, Trash2, Users, X, Zap
 } from "lucide-react";
 import "./styles.css";
 
@@ -39,6 +39,41 @@ const TEST_USERS=[
   {id:"processor1",name:"Data Processor 1",role:"user",initials:"P1"},
   {id:"processor2",name:"Data Processor 2",role:"user",initials:"P2"}
 ];
+
+function formatReceived(value){
+  if(!value)return "—";
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime()))return value;
+  return date.toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:false});
+}
+
+function documentLabel(count){return `${count} document${count===1?"":"s"}`;}
+
+function buildMiddlewarePayload(pack){
+  const data=pack?.extractedData||{};
+  const customer=customers.find(item=>item.name===pack?.customer);
+  return {
+    customerId:customer?.code||null,
+    customerName:pack?.customer||null,
+    identifier:pack?.id||null,
+    customerReference:data.invoiceNumber||null,
+    deliveryTerm_SAD20:null,
+    deliveryTermPlace_SAD20:null,
+    countryOfExport_SAD15:data.countryOfExport||null,
+    countryOfDestination_SAD17:data.sourceCountryOfDestination||null,
+    totalAmountInvoiced_SAD22:data.totalInvoiceValue??null,
+    totalAmountInvoicedCurrency_SAD22:data.currency||null,
+    totalGrossMass:data.totalGrossWeight??null,
+    ticketNo:pack?.ticket||null,
+    positions:(data.lines||[]).map(line=>({
+      lineNo:line.lineNo,description:line.description||null,hsCode:line.hsCode||null,
+      sourceCountryCode:line.sourceCountryCode||null,packages:line.packages??null,
+      packagingType:line.packagingType||null,quantity:line.quantity??null,
+      unitOfMeasure:line.unitOfMeasure||null,weightKg:line.weightKg??null,
+      unitValue:line.unitValue??null,totalValue:line.totalValue??null
+    }))
+  };
+}
 
 function TestUserLogin({onSelect}){
   return <div className="test-login">
@@ -174,7 +209,7 @@ function App(){
       for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunk,bytes.length)));
       const dataUrl=`data:${source.type||"application/octet-stream"};base64,${btoa(binary)}`;
       const response=await fetch("/api/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fileData:dataUrl,filename:files[0].name,mimeType:source.type})});
-      const result=await response.json();
+      const result=await response.json().catch(()=>({error:`Extraction endpoint returned HTTP ${response.status}` }));
       if(!response.ok)throw new Error(result.error||"Re-processing failed");
       const processed={...processing,status:"Needs review",confidence:Math.round((result.extraction.confidence||0)*100),extractedData:result.extraction};
       setSelectedPack(processed);
@@ -232,7 +267,7 @@ function App(){
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({fileData:dataUrl,filename:file.name,mimeType:file.type})
       });
-      const result=await response.json();
+      const result=await response.json().catch(()=>({error:`Extraction endpoint returned HTTP ${response.status}` }));
       if(!response.ok) throw new Error(result.error || "Extraction failed");
       const processed={...newPack,status:"Needs review",confidence:Math.round((result.extraction.confidence||0)*100),extractedData:result.extraction};
       setSelectedPack(processed);
@@ -255,6 +290,27 @@ function App(){
   const navigate=(p)=>{setPage(p);setMobileMenuOpen(false);};
   const notify=(msg)=>{setToast(msg);setTimeout(()=>setToast(""),2500)};
   const assignPack=(packId,assignedTo)=>{const updated={...livePacks.find(p=>p.id===packId),assignedTo};setLivePacks(prev=>prev.map(p=>p.id===packId?updated:p));if(selectedPack?.id===packId)setSelectedPack(prev=>({...prev,assignedTo}));persistPack(updated);notify(`Pack ${packId} assigned to ${assignedTo}`)};
+  const deletePack=async(packId)=>{
+    const pack=livePacks.find(p=>p.id===packId);
+    if(!pack||!window.confirm(`Delete pack ${packId}? This cannot be undone.`))return;
+    const removedIndex=livePacks.findIndex(p=>p.id===packId);
+    setLivePacks(prev=>prev.filter(p=>p.id!==packId));
+    if(selectedPack?.id===packId){setSelectedPack(null);navigate("inbox");}
+    try{
+      const response=await fetch(`/api/packs?id=${encodeURIComponent(packId)}`,{method:"DELETE",headers:{"x-user-role":currentUserRole}});
+      if(!response.ok)throw new Error("Database delete failed");
+      setDataSource("database");
+      notify(`Pack ${packId} deleted`);
+    }catch{
+      setLivePacks(prev=>{
+        if(prev.some(item=>item.id===packId))return prev;
+        const restored=[...prev];
+        restored.splice(Math.min(Math.max(removedIndex,0),restored.length),0,pack);
+        return restored;
+      });
+      notify(`Pack ${packId} was not deleted; it has been restored`);
+    }
+  };
   const validatePack=()=>{
   if(!selectedPack)return;
   const lines=selectedPack.extractedData?.lines||[];
@@ -322,7 +378,7 @@ const postToLCA=()=>{
       <div className="content">
         {page==="manager" && canViewManager && <ManagerPage livePacks={livePacks} dataSource={dataSource}/>} 
         {page==="dashboard" && <Dashboard navigate={navigate} notify={notify} livePacks={livePacks}/>}
-        {page==="inbox" && <InboxPage packs={filteredPacks} query={query} setQuery={setQuery} openPack={(p)=>{setSelectedPack(p);navigate("review")}} onUpload={handleUpload} onAssign={assignPack}/>}
+        {page==="inbox" && <InboxPage packs={filteredPacks} query={query} setQuery={setQuery} openPack={(p)=>{setSelectedPack(p);navigate("review")}} onUpload={handleUpload} onAssign={assignPack} onDelete={deletePack} canDelete={canViewManager}/>}
         
         {page==="review" && <Review pack={selectedPack} back={()=>navigate("inbox")} notify={notify} onAssign={assignPack} validatePack={validatePack} postToLCA={postToLCA} reprocessPack={reprocessPack}/>}
         {page==="customers" && <Customers notify={notify}/>}
@@ -465,13 +521,18 @@ function ManagerPage({livePacks,dataSource}){
 function Metric({label,value,delta,icon:Icon,warning}){return <div className="metric"><div className={"metric-icon "+(warning?"warning":"")}><Icon size={19}/></div><div className="metric-copy"><span>{label}</span><strong>{value}</strong><small className={delta.startsWith("-")?"positive":""}>{delta}</small></div></div>}
 function Queue({label,value,pct,cls}){return <div className="queue"><div><span className={"queue-dot "+cls}></span><b>{label}</b><strong>{value}</strong></div><div className="progress"><i className={cls} style={{width:pct+"%"}}></i></div><small>{pct}%</small></div>}
 
-function InboxPage({packs,query,setQuery,openPack,title="Inbox",onUpload,onAssign}){
- return <section><div className="page-head"><div><div className="eyebrow">Document processing</div><h1>{title}</h1><p>Review incoming document packs, extraction confidence and validation status.</p></div><button className="primary" onClick={()=>document.querySelector(".hidden-upload")?.click()}><Plus size={17}/> Upload documents</button></div>
+function InboxPage({packs,query,setQuery,openPack,title="Inbox",onUpload,onAssign,onDelete,canDelete}){
+ return <section><div className="page-head"><div><div className="eyebrow">Document processing</div><h1>{title}</h1><p>Review incoming document packs, extraction results and validation status.</p></div><button className="primary" onClick={()=>document.querySelector(".hidden-upload")?.click()}><Plus size={17}/> Upload documents</button></div>
  <div className="toolbar"><div className="search"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search packs, customers or tickets..."/></div><button className="filter">Status <ChevronDown size={15}/></button><button className="filter">Customer <ChevronDown size={15}/></button></div>
- <div className="panel"><PackTable packs={packs} onOpen={openPack} onAssign={onAssign}/></div></section>
+ <div className="panel"><PackTable packs={packs} onOpen={openPack} onAssign={onAssign} onDelete={onDelete} canDelete={canDelete}/></div></section>
 }
 
-function PackTable({packs,onOpen,onAssign}){return <div className="table-wrap"><table><thead><tr><th>PACK</th><th>CUSTOMER</th><th>OWNER</th><th>DOCUMENTS</th><th>STATUS</th><th>CONFIDENCE</th><th>RECEIVED</th><th></th></tr></thead><tbody>{packs.map(p=><tr key={p.id} onClick={()=>onOpen(p)}><td><b>{p.id}</b><small>{p.ticket}</small></td><td>{p.customer}</td><td><select className="owner-select" value={p.assignedTo||"Unassigned"} onClick={e=>e.stopPropagation()} onChange={e=>onAssign?.(p.id,e.target.value)}><option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option></select></td><td>{p.docs} documents</td><td><Status status={p.status}/></td><td><div className="confidence"><span>{p.confidence}%</span><div><i style={{width:p.confidence+"%"}}></i></div></div></td><td>{p.received}</td><td><button className="row-btn"><MoreHorizontal size={17}/></button></td></tr>)}</tbody></table></div>}
+function PackTable({packs,onOpen,onAssign,onDelete,canDelete}){
+ const [openMenu,setOpenMenu]=useState(null);
+ const closeTimer=useRef(null);
+ const keepMenuOpen=()=>{if(closeTimer.current)clearTimeout(closeTimer.current);};
+ const closeMenuSoon=()=>{closeTimer.current=setTimeout(()=>setOpenMenu(null),450);};
+ return <div className="table-wrap"><table><thead><tr><th>PACK</th><th>CUSTOMER</th><th>OWNER</th><th>DOCUMENTS</th><th>STATUS</th><th>RECEIVED</th><th></th></tr></thead><tbody>{packs.map(p=><tr key={p.id} onClick={()=>onOpen(p)}><td><b>{p.id}</b><small>{p.ticket}</small></td><td>{p.customer}</td><td><select className="owner-select" value={p.assignedTo||"Unassigned"} onClick={e=>e.stopPropagation()} onChange={e=>onAssign?.(p.id,e.target.value)}><option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option></select></td><td>{documentLabel(Number(p.docs)||0)}</td><td><Status status={p.status}/></td><td>{formatReceived(p.received)}</td><td>{canDelete&&<div className="row-menu" onMouseEnter={keepMenuOpen} onMouseLeave={closeMenuSoon}><button className="row-btn" aria-label={`Actions for ${p.id}`} onClick={e=>{e.stopPropagation();keepMenuOpen();setOpenMenu(current=>current===p.id?null:p.id)}}><MoreHorizontal size={18}/></button>{openMenu===p.id&&<div className="row-menu-popover" onClick={e=>e.stopPropagation()}><button type="button" onClick={()=>{setOpenMenu(null);onDelete?.(p.id)}}><Trash2 size={14}/> Delete pack</button></div>}</div>}</td></tr>)}</tbody></table></div>}
 function Status({status}){let c=status==="Validated"?"good":status==="Processing"?"processing":"review";return <span className={"status "+c}><span></span>{status}</span>}
 
 function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}){
@@ -657,7 +718,11 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
  return <section>
    <button className="back" onClick={back}>← Back to inbox</button>
    <div className="review-head">
-     <div><div className="eyebrow">{pack.id} · {pack.ticket}</div><h1>{pack.customer}</h1><p>{pack.docs} documents · received {pack.received}</p></div>
+     <div>
+       <div className="eyebrow">{pack.id} · {pack.ticket}</div>
+       <h1>{pack.customer}</h1>
+       <p>{documentLabel(Number(pack.docs)||0)} · received {formatReceived(pack.received)}</p>
+     </div>
      <div className="review-actions">
        <select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}>
          <option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option>
