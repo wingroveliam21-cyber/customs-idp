@@ -1100,3 +1100,63 @@ tbody tr:has(.row-menu:hover){background:transparent}
     z-index:3000 !important;
   }
 }
+
+
+/* Restore the compact preview switch styling and align the locked preview below the header. */
+.review-preview-toggle-row{
+  display:flex !important;
+  justify-content:flex-end !important;
+  align-items:center !important;
+  gap:10px !important;
+}
+.review-preview-toggle{
+  display:flex !important;
+  align-items:center !important;
+  gap:7px !important;
+  color:#526176 !important;
+  font-size:9px !important;
+  font-weight:600 !important;
+  cursor:pointer !important;
+  user-select:none !important;
+}
+.review-preview-toggle input{
+  position:absolute !important;
+  width:1px !important;
+  height:1px !important;
+  opacity:0 !important;
+  pointer-events:none !important;
+}
+.review-toggle-track{
+  display:block !important;
+  width:30px !important;
+  height:17px !important;
+  flex:0 0 30px !important;
+  border-radius:999px !important;
+  background:#cbd5e1 !important;
+  padding:2px !important;
+  box-sizing:border-box !important;
+  transition:.15s !important;
+}
+.review-toggle-track i{
+  display:block !important;
+  width:13px !important;
+  height:13px !important;
+  border-radius:50% !important;
+  background:#fff !important;
+  transition:.15s !important;
+  box-shadow:0 1px 2px rgba(15,23,42,.18) !important;
+}
+.review-preview-toggle input:checked + .review-toggle-track{
+  background:#2563eb !important;
+}
+.review-preview-toggle input:checked + .review-toggle-track i{
+  margin-left:13px !important;
+}
+@media(min-width:901px){
+  .review-page .review-preview-toggle-row{
+    top:132px !important;
+    height:44px !important;
+    min-height:44px !important;
+    padding:8px 30px !important;
+  }
+}
