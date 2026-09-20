@@ -721,7 +721,6 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
      <div>
        <div className="eyebrow">{pack.id} · {pack.ticket}</div>
        <h1>{pack.customer}</h1>
-       <p>{documentLabel(Number(pack.docs)||0)} · received {formatReceived(pack.received)}</p>
      </div>
      <div className="review-actions">
        <select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}>
@@ -734,6 +733,7 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
      </div>
    </div>
    <div className="review-preview-toggle-row">
+     <div className="review-meta-row">{documentLabel(Number(pack.docs)||0)} · received {formatReceived(pack.received)}</div>
      <label className="review-preview-toggle"><input type="checkbox" checked={showPreview} onChange={e=>setShowPreview(e.target.checked)}/><span className="review-toggle-track"><i></i></span><span>Show preview</span></label>
      <button className="secondary review-fit-btn" onClick={()=>setReviewSplit(50)}>Reset split</button>
    </div>
