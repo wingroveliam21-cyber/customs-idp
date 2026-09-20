@@ -551,6 +551,19 @@ function PackTable({packs,onOpen,onAssign,onDelete,canDelete}){
  return <div className="table-wrap"><table><thead><tr><th>PACK</th><th>CUSTOMER</th><th>OWNER</th><th>DOCUMENTS</th><th>STATUS</th><th>RECEIVED</th><th></th></tr></thead><tbody>{packs.map(p=><tr key={p.id} onClick={()=>onOpen(p)}><td><b>{p.id}</b><small>{p.ticket}</small></td><td>{p.customer}</td><td><select className="owner-select" value={p.assignedTo||"Unassigned"} onClick={e=>e.stopPropagation()} onChange={e=>onAssign?.(p.id,e.target.value)}><option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option></select></td><td>{documentLabel(Number(p.docs)||0)}</td><td><Status status={p.status}/></td><td>{formatReceived(p.received)}</td><td>{canDelete&&<div className="row-menu" onMouseEnter={keepMenuOpen} onMouseLeave={closeMenuSoon}><button className="row-btn" aria-label={`Actions for ${p.id}`} onClick={e=>{e.stopPropagation();keepMenuOpen();setOpenMenu(current=>current===p.id?null:p.id)}}><MoreHorizontal size={18}/></button>{openMenu===p.id&&<div className="row-menu-popover" onClick={e=>e.stopPropagation()}><button type="button" onClick={()=>{setOpenMenu(null);onDelete?.(p.id)}}><Trash2 size={14}/> Delete pack</button></div>}</div>}</td></tr>)}</tbody></table></div>}
 function Status({status}){let c=status==="Validated"?"good":status==="Processing"?"processing":"review";return <span className={"status "+c}><span></span>{status}</span>}
 
+
+function ReviewField({label,value,wide=false,muted=false}){
+  const display=value===null||value===undefined||value===""?"—":String(value);
+  return <div className={"review-field "+(wide?"wide ":"")+(muted?"muted":"")}><span>{label}</span><b title={display}>{display}</b></div>;
+}
+function EvidenceList({items=[]}){
+  if(!items.length)return <div className="review-empty-state">No source evidence was returned.</div>;
+  return <div className="review-evidence-list">{items.map((item,index)=><div className="review-evidence-row" key={index}>
+    <div><b>{item.field||"Field"}</b><span>{item.sourceText||"No source text recorded"}</span></div>
+    <div><small>{item.page!=null?"Page "+item.page:"Page —"}</small><strong>{Math.round((Number(item.confidence)||0)*100)}%</strong></div>
+  </div>)}</div>;
+}
+
 function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}){
  const [docUrls,setDocUrls]=useState({});
  const [tab,setTab]=useState("extraction");
@@ -649,6 +662,21 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    };
  },[resizing]);
 
+
+ const data=pack.extractedData||{};
+ const allLines=Array.isArray(data.lines)?data.lines:[];
+ const extractionFields=[
+   ["Document type",data.documentType],["Document type confidence",data.documentTypeConfidence!=null?Math.round(Number(data.documentTypeConfidence)*100)+"%":null],
+   ["Overall extraction confidence",data.confidence!=null?Math.round(Number(data.confidence)*100)+"%":null],
+   ["Invoice number",data.invoiceNumber],["Invoice numbers",Array.isArray(data.invoiceNumbers)?data.invoiceNumbers.join(", "):data.invoiceNumbers],
+   ["Export date",data.exportDate],["Air waybill",data.airWaybill],["Transport reference",data.transportReference],
+   ["Exporter",data.exporter],["Exporter address",data.exporterAddress],["Exporter VAT number",data.exporterVatNo],
+   ["Consignee",data.consignee],["Consignee address",data.consigneeAddress],["Consignee tax ID",data.consigneeTaxId],["Importer",data.importer],
+   ["Country of export",data.countryOfExport],["Destination (source)",data.sourceCountryOfDestination],["Reason for export",data.reasonForExport],
+   ["Delivery term",data.deliveryTerm],["Delivery term place",data.deliveryTermPlace],
+   ["Total packages",data.totalPackages],["Total net weight (kg)",data.totalNetWeight],["Total gross weight (kg)",data.totalGrossWeight],
+   ["Currency",data.currency],["Total invoice value",data.totalInvoiceValue],["Payment method",data.paymentMethod]
+ ];
  const extractedPanel=<div className="review-left-column">
    <div className="panel extraction-panel review-data-panel">
      <div className="tabs">
@@ -656,40 +684,59 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
        <button className={tab==="json"?"selected":""} onClick={()=>setTab("json")}>Middleware JSON</button>
      </div>
      {tab==="extraction"&&<>
-       <div className="data-summary">
-         {pack.processingError&&<div className="extraction-error"><b>Extraction failed:</b> {pack.processingError}</div>}
-         <div><span>Invoice total</span><b>{pack.extractedData?.currency?`${pack.extractedData.currency} ${Number(pack.extractedData.totalInvoiceValue||0).toLocaleString(undefined,{minimumFractionDigits:2})}`:"Awaiting extraction"}</b></div>
-         <div><span>Gross mass</span><b>{pack.extractedData?.totalGrossWeight!=null?`${pack.extractedData.totalGrossWeight} kg`:"Awaiting extraction"}</b></div>
-         <div><span>Country export</span><b>{pack.extractedData?.countryOfExport||"Awaiting extraction"}</b></div>
-         <div><span>Destination</span><b>{pack.extractedData?.sourceCountryOfDestination||"Awaiting extraction"}</b></div>
+       {pack.processingError&&<div className="extraction-error"><b>Extraction failed:</b> {pack.processingError}</div>}
+       <div className="review-extraction-overview">
+         <div className="review-section-head"><div><h3>Document & shipment data</h3><span>Every top-level field returned by the extraction engine is shown below.</span></div></div>
+         <div className="review-field-grid">{extractionFields.map(([label,value])=><ReviewField key={label} label={label} value={value}/>)}</div>
+       </div>
+       <div className="review-extraction-overview">
+         <div className="review-section-head"><div><h3>Invoice totals</h3><span>Source totals are shown before any customer rules or downstream transformations.</span></div></div>
+         <div className="review-field-grid review-totals-grid">
+           <ReviewField label="Total packages" value={data.totalPackages}/>
+           <ReviewField label="Total net weight" value={data.totalNetWeight!=null?data.totalNetWeight+" kg":null}/>
+           <ReviewField label="Total gross weight" value={data.totalGrossWeight!=null?data.totalGrossWeight+" kg":null}/>
+           <ReviewField label="Currency" value={data.currency}/>
+           <ReviewField label="Invoice value" value={data.totalInvoiceValue}/>
+           <ReviewField label="Payment method" value={data.paymentMethod}/>
+         </div>
        </div>
        <div className="section-title">
-         <div><h3>Invoice positions</h3><span>{pack.extractedData?.lines?.length||0} lines extracted · AI confidence shown per line</span></div>
+         <div><h3>Invoice positions</h3><span>{allLines.length} lines extracted · all line-level source fields shown</span></div>
          <button className="secondary" onClick={()=>notify("Correction workflow ready — next step is persistent editing")}>Save corrections</button>
        </div>
-       <div className="line-table">
+       <div className="line-table review-line-table">
          <table>
-           <thead><tr><th>#</th><th>DESCRIPTION</th><th>HS CODE</th><th>ORIGIN</th><th>PKGS</th><th>QTY</th><th>WEIGHT KG</th><th>VALUE</th><th></th></tr></thead>
-           <tbody>{(pack.extractedData?.lines||[]).map(l=><tr key={l.lineNo}>
-             <td>{l.lineNo}</td><td><b>{l.description||"—"}</b><small>{Math.round((l.confidence||0)*100)}% confidence</small></td>
-             <td>{l.hsCode||"—"}</td><td><span className="country">{l.sourceCountryCode||"—"}</span></td>
-             <td>{l.packages??"—"} {l.packagingType||""}</td><td>{l.quantity??"—"} {l.unitOfMeasure||""}</td><td>{l.weightKg??"—"}</td>
-             <td>{pack.extractedData?.currency||""} {l.totalValue??"—"}</td><td><MoreHorizontal size={16}/></td>
+           <thead><tr><th>#</th><th>DESCRIPTION</th><th>HS CODE</th><th>ORIGIN</th><th>MARKS</th><th>PKGS</th><th>PACK TYPE</th><th>QTY</th><th>UOM</th><th>NET KG</th><th>GROSS KG</th><th>WEIGHT KG</th><th>UNIT VALUE</th><th>TOTAL VALUE</th><th>CURRENCY</th><th>CONF.</th></tr></thead>
+           <tbody>{allLines.map(l=><tr key={l.lineNo}>
+             <td>{l.lineNo??"—"}</td><td><b>{l.description||"—"}</b></td><td>{l.hsCode||"—"}</td><td><span className="country">{l.sourceCountryCode||"—"}</span></td>
+             <td>{l.marks||"—"}</td><td>{l.packages??"—"}</td><td>{l.packagingType||"—"}</td><td>{l.quantity??"—"}</td><td>{l.unitOfMeasure||"—"}</td>
+             <td>{l.netMassKg??"—"}</td><td>{l.grossMassKg??"—"}</td><td>{l.weightKg??"—"}</td><td>{l.unitValue??"—"}</td><td>{l.totalValue??"—"}</td>
+             <td>{l.currency||data.currency||"—"}</td><td>{Math.round((Number(l.confidence)||0)*100)}%</td>
            </tr>)}</tbody>
          </table>
        </div>
+       <div className="review-extraction-overview">
+         <div className="review-section-head"><div><h3>Extraction checks & warnings</h3><span>Checks returned by the extraction engine before customer validation.</span></div></div>
+         {(data.validationChecks||[]).length
+           ? <div className="review-check-list">{data.validationChecks.map((check,index)=><div className={"review-check-row "+check.status} key={index}><div><b>{check.check}</b><span>{check.detail}</span></div><strong>{check.status.replace("_"," ")}</strong></div>)}
+           : <div className="review-empty-state">No extraction checks returned.</div>}
+         {(data.warnings||[]).length>0&&<div className="review-warning-list">{data.warnings.map((warning,index)=><div key={index}><AlertCircle size={14}/><span>{warning}</span></div>)}</div>}
+       </div>
+       <div className="review-extraction-overview">
+         <div className="review-section-head"><div><h3>Field evidence</h3><span>Source text and confidence returned by the extraction engine.</span></div></div>
+         <EvidenceList items={data.fieldEvidence||[]}/>
+       </div>
+       {allLines.some(line=>Array.isArray(line.evidence)&&line.evidence.length>0)&&<div className="review-extraction-overview">
+         <div className="review-section-head"><div><h3>Line-level evidence</h3><span>Evidence captured against individual invoice positions.</span></div></div>
+         {allLines.map(line=><div className="review-line-evidence" key={line.lineNo}><b>Line {line.lineNo}</b><EvidenceList items={line.evidence||[]}/></div>)}
+       </div>}
      </>}
-     {tab==="json"&&<pre className="json">{JSON.stringify({
-       customerId:"ACME-001",identifier:pack.id,customerReference:"88421",customerCustomerNo:"ACME-UK",
-       deliveryTerm_SAD20:"DDP",deliveryTermPlace_SAD20:"Maldon",countryOfExport_SAD15:"HU",
-       countryOfDestination_SAD17:"GB",totalAmountInvoiced_SAD22:720,totalAmountInvoicedCurrency_SAD22:"GBP",
-       totalGrossMass:23.01,ticketNo:pack.ticket,positions:[]
-     },null,2)}</pre>}
+     {tab==="json"&&<pre className="json">{JSON.stringify(buildMiddlewarePayload(pack),null,2)}</pre>}
    </div>
    <aside className="agent-panel review-agent-panel">
      <div className="agent-title"><div className="agent-orb"><Sparkles size={18}/></div><div><b>Extraction Agent</b><span>Online · customer-aware</span></div></div>
-     <div className="agent-insight"><Sparkles size={15}/><div><b>Validation complete</b><p>I found 1 field that may need review: the gross mass was apportioned across the three lines using the configured net-weight ratio.</p></div></div>
-     <div className="agent-rule"><span>Applied customer rule</span><b>Gross weight apportionment</b><small>Net-weight ratio · Bancale Legno excluded from net weight</small></div>
+     <div className="agent-insight"><Sparkles size={15}/><div><b>Extraction source layer</b><p>The values above are the raw extraction returned from the document. Customer rules and middleware transformations are applied separately.</p></div></div>
+     <div className="agent-rule"><span>Extraction version</span><b>{pack.extractionVersion||"v2"}</b><small>{data.documentType||"Unknown document"} · {Math.round((Number(data.confidence)||0)*100)}% overall confidence</small></div>
      <div className="chat"><div className="message agent">I can correct extracted fields, explain why a value was chosen, or save a correction as a customer rule.</div><div className="chat-input"><input value={chat} onChange={e=>setChat(e.target.value)} placeholder="Ask the agent to change something..."/><button onClick={()=>{setChat("");notify("Agent request queued")}}><ArrowRight size={16}/></button></div></div>
    </aside>
  </div>;
