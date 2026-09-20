@@ -1246,3 +1246,62 @@ tbody tr:has(.row-menu:hover){background:transparent}
   .sidebar-collapsed .review-page .review-preview-toggle-row{left:104px !important;}
   .review-page .review-preview-toggle-row .review-meta-row{display:none;}
 }
+
+
+/* Compact document name selector — keep maximum height for the actual document. */
+@media(min-width:901px){
+  .review-documents-panel .review-documents-head{
+    padding:7px 12px !important;
+    min-height:34px !important;
+  }
+  .review-documents-panel .review-documents-head h3{
+    font-size:10px !important;
+    margin:0 !important;
+  }
+  .review-documents-panel .review-documents-head span{
+    display:none !important;
+  }
+  .review-documents-panel .review-document-name-list{
+    display:flex !important;
+    flex-wrap:nowrap !important;
+    gap:5px !important;
+    padding:5px 8px !important;
+    min-height:42px !important;
+    height:42px !important;
+    overflow-x:auto !important;
+    overflow-y:hidden !important;
+    border-top:1px solid #edf0f4;
+  }
+  .review-documents-panel .review-document-name{
+    flex:0 0 auto !important;
+    max-width:260px !important;
+    height:30px !important;
+    display:flex !important;
+    align-items:center !important;
+    gap:6px !important;
+    padding:5px 9px !important;
+    border:1px solid #dce3ed !important;
+    border-radius:6px !important;
+    background:#fff !important;
+    color:#526176 !important;
+    cursor:pointer !important;
+    font-size:9px !important;
+    text-align:left !important;
+  }
+  .review-documents-panel .review-document-name span{
+    max-width:210px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .review-documents-panel .review-document-name small{
+    color:#8a95a5;
+    font-size:7px;
+    flex:0 0 auto;
+  }
+  .review-documents-panel .review-document-name.selected{
+    border-color:#2563eb !important;
+    background:#eff6ff !important;
+    color:#1d4ed8 !important;
+  }
+}
