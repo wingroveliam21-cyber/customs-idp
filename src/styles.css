@@ -1024,3 +1024,79 @@ tbody tr:has(.row-menu:hover){background:transparent}
     left:104px !important;
   }
 }
+
+
+/* Global fixed application chrome + fixed review chrome. */
+@media(min-width:901px){
+  .app-shell .topbar{
+    position:fixed !important;
+    top:0 !important;
+    left:250px !important;
+    right:0 !important;
+    width:auto !important;
+    height:60px !important;
+    z-index:5000 !important;
+    box-sizing:border-box !important;
+    background:#fff !important;
+    border-bottom:1px solid #e7ebf2 !important;
+    transform:translateZ(0);
+  }
+  .sidebar-collapsed .topbar{
+    left:104px !important;
+  }
+  .app-shell .main{
+    padding-top:60px !important;
+  }
+  .app-shell .content{
+    padding-top:30px !important;
+  }
+  .review-page{
+    padding-top:132px !important;
+  }
+  .review-page .review-head{
+    position:fixed !important;
+    top:60px !important;
+    left:250px !important;
+    right:0 !important;
+    width:auto !important;
+    height:72px !important;
+    min-height:72px !important;
+    margin:0 !important;
+    padding:10px 30px !important;
+    box-sizing:border-box !important;
+    display:flex !important;
+    align-items:center !important;
+    background:#fff !important;
+    border-bottom:1px solid #e7ebf2 !important;
+    z-index:4900 !important;
+    transform:translateZ(0);
+  }
+  .sidebar-collapsed .review-page .review-head{
+    left:104px !important;
+  }
+  .review-page .review-preview-toggle-row{
+    position:fixed !important;
+    top:132px !important;
+    left:250px !important;
+    right:0 !important;
+    width:auto !important;
+    height:40px !important;
+    min-height:40px !important;
+    margin:0 !important;
+    padding:8px 30px !important;
+    box-sizing:border-box !important;
+    background:#fff !important;
+    border-bottom:1px solid #edf0f4 !important;
+    z-index:4899 !important;
+  }
+  .sidebar-collapsed .review-page .review-preview-toggle-row{
+    left:104px !important;
+  }
+}
+@media(max-width:900px){
+  .app-shell .topbar{
+    position:sticky !important;
+    top:0 !important;
+    z-index:3000 !important;
+  }
+}
