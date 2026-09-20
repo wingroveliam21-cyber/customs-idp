@@ -36,6 +36,21 @@ export default async function handler(req,res){
         if(error) return res.status(404).json({error:error.message});
         return res.status(200).json({bucket:BUCKET,path,signedUrl:data.signedUrl});
       }
+      if(action==="list-pack"){
+        if(!packId) return res.status(400).json({error:"packId is required"});
+        const safePackId=cleanSegment(packId);
+        const {data,error}=await supabase.storage.from(BUCKET).list(safePackId,{limit:100,offset:0,sortBy:{column:"name",order:"asc"}});
+        if(error) return res.status(500).json({error:error.message});
+        const files=(data||[]).filter(item=>item?.name).map(item=>({
+          id:`${safePackId}/${item.name}`,
+          name:item.name.replace(/^\d+-/,""),
+          storagePath:`${safePackId}/${item.name}`,
+          size:item.metadata?.size||0,
+          type:item.metadata?.mimetype||item.metadata?.contentType||"application/octet-stream"
+        }));
+        return res.status(200).json({bucket:BUCKET,packId:safePackId,files});
+      }
+
 
       return res.status(400).json({error:"Unknown storage action"});
     }
