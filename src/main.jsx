@@ -27,6 +27,40 @@ function openDocDb(){return new Promise((resolve,reject)=>{const req=indexedDB.o
 async function saveUploadedDocument(id,file){const db=await openDocDb();return new Promise((resolve,reject)=>{const tx=db.transaction(DOC_STORE,"readwrite");tx.objectStore(DOC_STORE).put(file,id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
 async function getUploadedDocument(id){const db=await openDocDb();return new Promise((resolve,reject)=>{const tx=db.transaction(DOC_STORE,"readonly");const req=tx.objectStore(DOC_STORE).get(id);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);});}
 
+function buildMiddlewarePayload(pack){
+  const data=pack?.extractedData||{};
+  const lines=Array.isArray(data.lines)?data.lines:[];
+  return {
+    customerId:null,
+    identifier:pack?.id||null,
+    customerReference:data.invoiceNumber||null,
+    customerCustomerNo:null,
+    deliveryTerm_SAD20:data.deliveryTerm||null,
+    deliveryTermPlace_SAD20:data.deliveryTermPlace||null,
+    countryOfExport_SAD15:data.countryOfExport||null,
+    countryOfDestination_SAD17:data.sourceCountryOfDestination||null,
+    totalTransportUnits:data.totalPackages??null,
+    totalAmountInvoiced_SAD22:data.totalInvoiceValue??null,
+    totalAmountInvoicedCurrency_SAD22:data.currency||null,
+    totalGrossMass:data.totalGrossWeight??null,
+    ticketNo:pack?.ticket||null,
+    positions:lines.map((line,index)=>({
+      sequentialNo_SAD32:line.lineNo??index+1,
+      noSupplementaryUnits2_SAD41:null,
+      preference_SAD36:null,
+      customsProcedure_SAD37ex_im_t:null,
+      countryOfOrigin_SAD34:line.sourceCountryCode||null,
+      goodsDescription_SAD31ex_im_t:line.description||null,
+      itemPrice_SAD42Currency:line.currency||data.currency||null,
+      itemPrice_SAD42:line.unitValue??null,
+      netMass_SAD38:line.netMassKg??line.weightKg??null,
+      grossMass_SAD35:line.grossMassKg??line.weightKg??null,
+      numberOfPackages:line.packages??null,
+      typeOfPackages:line.packagingType||null
+    }))
+  };
+}
+
 const sampleLines = [
   {line:1,description:"Oak wooden packaging boxes",hs:"4415 10 00",origin:"HU",qty:24,net:"10.080",gross:"11.420",value:"384.00",confidence:97},
   {line:2,description:"Bancale Legno pallets",hs:"4415 20 90",origin:"IT",qty:6,net:"0.000",gross:"3.180",value:"120.00",confidence:93},
