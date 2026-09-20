@@ -684,18 +684,17 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
        <div className="review-documents-head">
          <div><h3>Documents</h3><span>{documentRows.length} documents · select a document to preview it</span></div>
        </div>
-       <div className="review-document-list">
+       <div className="review-document-list review-document-name-list">
          {documentRows.map(f=>{
            const id=f.id||f.name, selected=id===selectedDocumentId;
            const isPdf=/\.pdf$/i.test(f.name||"");
-           const isImage=/^image\//i.test(f.type||"") || /\.(png|jpe?g|webp|gif)$/i.test(f.name||"");
-           const thumbUrl=docUrls[id];
-           return <button type="button" className={"review-document-card "+(selected?"selected":"")} key={id} onClick={()=>setSelectedDocumentId(id)}>
-             <div className="review-document-icon">{thumbUrl&&isImage?<img src={thumbUrl} alt="" />:thumbUrl&&isPdf?<iframe src={`${thumbUrl}#page=1&view=FitH&zoom=page-width`} title="" tabIndex="-1"/>:<div className="review-document-placeholder"><FileText size={22}/><span>{isPdf?"PDF":"DOC"}</span></div>}</div>
-             <div className="review-document-copy"><b>{f.name}</b><span>{isPdf?"PDF":(f.type||"Document").split("/").pop().toUpperCase()} · {f.storagePath?"Stored in Supabase":"Browser fallback"}</span></div>
+           return <button type="button" className={"review-document-name "+(selected?"selected":"")} key={id} onClick={()=>setSelectedDocumentId(id)}>
+             <FileText size={14}/>
+             <span title={f.name}>{f.name}</span>
+             <small>{isPdf?"PDF":"DOC"}</small>
            </button>;
          })}
-       </div>
+       </div>       </div>
      </div>
      <div className="review-document-preview">
        <div className="review-document-preview-head">
