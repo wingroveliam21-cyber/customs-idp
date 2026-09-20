@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   Activity, AlertCircle, ArrowRight, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, FileText,
   Inbox, Mail, Menu, MoreHorizontal, Package, Plus, Search,
-  Settings, ShieldCheck, Sparkles, Trash2, Users, X, Zap
+  Settings, ShieldCheck, Sparkles, Users, X, Zap
 } from "lucide-react";
 import "./styles.css";
 
@@ -39,41 +39,6 @@ const TEST_USERS=[
   {id:"processor1",name:"Data Processor 1",role:"user",initials:"P1"},
   {id:"processor2",name:"Data Processor 2",role:"user",initials:"P2"}
 ];
-
-function formatReceived(value){
-  if(!value)return "—";
-  const date=new Date(value);
-  if(Number.isNaN(date.getTime()))return value;
-  return date.toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:false});
-}
-
-function documentLabel(count){return `${count} document${count===1?"":"s"}`;}
-
-function buildMiddlewarePayload(pack){
-  const data=pack?.extractedData||{};
-  const customer=customers.find(item=>item.name===pack?.customer);
-  return {
-    customerId:customer?.code||null,
-    customerName:pack?.customer||null,
-    identifier:pack?.id||null,
-    customerReference:data.invoiceNumber||null,
-    deliveryTerm_SAD20:null,
-    deliveryTermPlace_SAD20:null,
-    countryOfExport_SAD15:data.countryOfExport||null,
-    countryOfDestination_SAD17:data.sourceCountryOfDestination||null,
-    totalAmountInvoiced_SAD22:data.totalInvoiceValue??null,
-    totalAmountInvoicedCurrency_SAD22:data.currency||null,
-    totalGrossMass:data.totalGrossWeight??null,
-    ticketNo:pack?.ticket||null,
-    positions:(data.lines||[]).map(line=>({
-      lineNo:line.lineNo,description:line.description||null,hsCode:line.hsCode||null,
-      sourceCountryCode:line.sourceCountryCode||null,packages:line.packages??null,
-      packagingType:line.packagingType||null,quantity:line.quantity??null,
-      unitOfMeasure:line.unitOfMeasure||null,weightKg:line.weightKg??null,
-      unitValue:line.unitValue??null,totalValue:line.totalValue??null
-    }))
-  };
-}
 
 function TestUserLogin({onSelect}){
   return <div className="test-login">
@@ -145,22 +110,6 @@ function App(){
         localStorage.setItem(resetKey,"1");
       }
     }catch{}
-    // Recover document metadata directly from private Supabase Storage for older packs
-    // whose database metadata predates uploadedFiles persistence.
-    const recovered=await Promise.all(nextPacks.map(async pack=>{
-      if(Array.isArray(pack.uploadedFiles)&&pack.uploadedFiles.length)return pack;
-      try{
-        const storageResponse=await fetch("/api/storage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"list-pack",packId:pack.id})});
-        const storageData=await storageResponse.json();
-        if(storageResponse.ok&&Array.isArray(storageData.files)&&storageData.files.length){
-          const recoveredPack={...pack,uploadedFiles:storageData.files,docs:Math.max(Number(pack.docs)||0,storageData.files.length)};
-          await fetch("/api/packs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(recoveredPack)});
-          return recoveredPack;
-        }
-      }catch{}
-      return pack;
-    }));
-    nextPacks=recovered;
     setLivePacks(nextPacks);
     // Backfill document metadata to Supabase for packs restored from local browser storage.
     const restoredWithDocuments=nextPacks.filter(pack=>{
@@ -225,7 +174,7 @@ function App(){
       for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunk,bytes.length)));
       const dataUrl=`data:${source.type||"application/octet-stream"};base64,${btoa(binary)}`;
       const response=await fetch("/api/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fileData:dataUrl,filename:files[0].name,mimeType:source.type})});
-      const result=await response.json().catch(()=>({error:`Extraction endpoint returned HTTP ${response.status}` }));
+      const result=await response.json();
       if(!response.ok)throw new Error(result.error||"Re-processing failed");
       const processed={...processing,status:"Needs review",confidence:Math.round((result.extraction.confidence||0)*100),extractedData:result.extraction};
       setSelectedPack(processed);
@@ -283,7 +232,7 @@ function App(){
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({fileData:dataUrl,filename:file.name,mimeType:file.type})
       });
-      const result=await response.json().catch(()=>({error:`Extraction endpoint returned HTTP ${response.status}` }));
+      const result=await response.json();
       if(!response.ok) throw new Error(result.error || "Extraction failed");
       const processed={...newPack,status:"Needs review",confidence:Math.round((result.extraction.confidence||0)*100),extractedData:result.extraction};
       setSelectedPack(processed);
@@ -306,27 +255,6 @@ function App(){
   const navigate=(p)=>{setPage(p);setMobileMenuOpen(false);};
   const notify=(msg)=>{setToast(msg);setTimeout(()=>setToast(""),2500)};
   const assignPack=(packId,assignedTo)=>{const updated={...livePacks.find(p=>p.id===packId),assignedTo};setLivePacks(prev=>prev.map(p=>p.id===packId?updated:p));if(selectedPack?.id===packId)setSelectedPack(prev=>({...prev,assignedTo}));persistPack(updated);notify(`Pack ${packId} assigned to ${assignedTo}`)};
-  const deletePack=async(packId)=>{
-    const pack=livePacks.find(p=>p.id===packId);
-    if(!pack||!window.confirm(`Delete pack ${packId}? This cannot be undone.`))return;
-    const removedIndex=livePacks.findIndex(p=>p.id===packId);
-    setLivePacks(prev=>prev.filter(p=>p.id!==packId));
-    if(selectedPack?.id===packId){setSelectedPack(null);navigate("inbox");}
-    try{
-      const response=await fetch(`/api/packs?id=${encodeURIComponent(packId)}`,{method:"DELETE",headers:{"x-user-role":currentUserRole}});
-      if(!response.ok)throw new Error("Database delete failed");
-      setDataSource("database");
-      notify(`Pack ${packId} deleted`);
-    }catch{
-      setLivePacks(prev=>{
-        if(prev.some(item=>item.id===packId))return prev;
-        const restored=[...prev];
-        restored.splice(Math.min(Math.max(removedIndex,0),restored.length),0,pack);
-        return restored;
-      });
-      notify(`Pack ${packId} was not deleted; it has been restored`);
-    }
-  };
   const validatePack=()=>{
   if(!selectedPack)return;
   const lines=selectedPack.extractedData?.lines||[];
@@ -390,11 +318,11 @@ const postToLCA=()=>{
         <div className="top-actions"><button className="icon-btn" aria-label="Open inbox" onClick={()=>navigate("inbox")}><Mail size={18}/></button><div className="top-avatar" title={currentUserName}>{currentUserInitials}</div></div>
       </header>
 
-      <input id="customs-upload-input" ref={uploadRef} className="hidden-upload" type="file" multiple accept=".pdf,.xlsx,.xls,.doc,.docx,.csv,.png,.jpg,.jpeg,.eml,.msg" onChange={e=>{handleUpload(e.target.files);e.target.value="";}}/>
+      <input ref={uploadRef} className="hidden-upload" type="file" multiple accept=".pdf,.xlsx,.xls,.doc,.docx,.csv,.png,.jpg,.jpeg,.eml,.msg" onChange={e=>handleUpload(e.target.files)}/>
       <div className="content">
         {page==="manager" && canViewManager && <ManagerPage livePacks={livePacks} dataSource={dataSource}/>} 
         {page==="dashboard" && <Dashboard navigate={navigate} notify={notify} livePacks={livePacks}/>}
-        {page==="inbox" && <InboxPage packs={filteredPacks} query={query} setQuery={setQuery} openPack={(p)=>{setSelectedPack(p);navigate("review")}} onUpload={handleUpload} onAssign={assignPack} onDelete={deletePack} canDelete={canViewManager} uploadRef={uploadRef}/>}
+        {page==="inbox" && <InboxPage packs={filteredPacks} query={query} setQuery={setQuery} openPack={(p)=>{setSelectedPack(p);navigate("review")}} onUpload={handleUpload} onAssign={assignPack}/>}
         
         {page==="review" && <Review pack={selectedPack} back={()=>navigate("inbox")} notify={notify} onAssign={assignPack} validatePack={validatePack} postToLCA={postToLCA} reprocessPack={reprocessPack}/>}
         {page==="customers" && <Customers notify={notify}/>}
@@ -537,32 +465,14 @@ function ManagerPage({livePacks,dataSource}){
 function Metric({label,value,delta,icon:Icon,warning}){return <div className="metric"><div className={"metric-icon "+(warning?"warning":"")}><Icon size={19}/></div><div className="metric-copy"><span>{label}</span><strong>{value}</strong><small className={delta.startsWith("-")?"positive":""}>{delta}</small></div></div>}
 function Queue({label,value,pct,cls}){return <div className="queue"><div><span className={"queue-dot "+cls}></span><b>{label}</b><strong>{value}</strong></div><div className="progress"><i className={cls} style={{width:pct+"%"}}></i></div><small>{pct}%</small></div>}
 
-function InboxPage({packs,query,setQuery,openPack,title="Inbox",onUpload,onAssign,onDelete,canDelete,uploadRef}){
- return <section><div className="page-head"><div><div className="eyebrow">Document processing</div><h1>{title}</h1><p>Review incoming document packs, extraction results and validation status.</p></div><button type="button" className="primary" onClick={()=>uploadRef?.current?.click()}><Plus size={17}/> Upload documents</button></div>
+function InboxPage({packs,query,setQuery,openPack,title="Inbox",onUpload,onAssign}){
+ return <section><div className="page-head"><div><div className="eyebrow">Document processing</div><h1>{title}</h1><p>Review incoming document packs, extraction confidence and validation status.</p></div><button className="primary" onClick={()=>document.querySelector(".hidden-upload")?.click()}><Plus size={17}/> Upload documents</button></div>
  <div className="toolbar"><div className="search"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search packs, customers or tickets..."/></div><button className="filter">Status <ChevronDown size={15}/></button><button className="filter">Customer <ChevronDown size={15}/></button></div>
- <div className="panel"><PackTable packs={packs} onOpen={openPack} onAssign={onAssign} onDelete={onDelete} canDelete={canDelete}/></div></section>
+ <div className="panel"><PackTable packs={packs} onOpen={openPack} onAssign={onAssign}/></div></section>
 }
 
-function PackTable({packs,onOpen,onAssign,onDelete,canDelete}){
- const [openMenu,setOpenMenu]=useState(null);
- const closeTimer=useRef(null);
- const keepMenuOpen=()=>{if(closeTimer.current)clearTimeout(closeTimer.current);};
- const closeMenuSoon=()=>{closeTimer.current=setTimeout(()=>setOpenMenu(null),450);};
- return <div className="table-wrap"><table><thead><tr><th>PACK</th><th>CUSTOMER</th><th>OWNER</th><th>DOCUMENTS</th><th>STATUS</th><th>RECEIVED</th><th></th></tr></thead><tbody>{packs.map(p=><tr key={p.id} onClick={()=>onOpen(p)}><td><b>{p.id}</b><small>{p.ticket}</small></td><td>{p.customer}</td><td><select className="owner-select" value={p.assignedTo||"Unassigned"} onClick={e=>e.stopPropagation()} onChange={e=>onAssign?.(p.id,e.target.value)}><option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option></select></td><td>{documentLabel(Number(p.docs)||0)}</td><td><Status status={p.status}/></td><td>{formatReceived(p.received)}</td><td>{canDelete&&<div className="row-menu" onMouseEnter={keepMenuOpen} onMouseLeave={closeMenuSoon}><button className="row-btn" aria-label={`Actions for ${p.id}`} onClick={e=>{e.stopPropagation();keepMenuOpen();setOpenMenu(current=>current===p.id?null:p.id)}}><MoreHorizontal size={18}/></button>{openMenu===p.id&&<div className="row-menu-popover" onClick={e=>e.stopPropagation()}><button type="button" onClick={()=>{setOpenMenu(null);onDelete?.(p.id)}}><Trash2 size={14}/> Delete pack</button></div>}</div>}</td></tr>)}</tbody></table></div>}
+function PackTable({packs,onOpen,onAssign}){return <div className="table-wrap"><table><thead><tr><th>PACK</th><th>CUSTOMER</th><th>OWNER</th><th>DOCUMENTS</th><th>STATUS</th><th>CONFIDENCE</th><th>RECEIVED</th><th></th></tr></thead><tbody>{packs.map(p=><tr key={p.id} onClick={()=>onOpen(p)}><td><b>{p.id}</b><small>{p.ticket}</small></td><td>{p.customer}</td><td><select className="owner-select" value={p.assignedTo||"Unassigned"} onClick={e=>e.stopPropagation()} onChange={e=>onAssign?.(p.id,e.target.value)}><option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option></select></td><td>{p.docs} documents</td><td><Status status={p.status}/></td><td><div className="confidence"><span>{p.confidence}%</span><div><i style={{width:p.confidence+"%"}}></i></div></div></td><td>{p.received}</td><td><button className="row-btn"><MoreHorizontal size={17}/></button></td></tr>)}</tbody></table></div>}
 function Status({status}){let c=status==="Validated"?"good":status==="Processing"?"processing":"review";return <span className={"status "+c}><span></span>{status}</span>}
-
-
-function ReviewField({label,value,wide=false,muted=false}){
-  const display=value===null||value===undefined||value===""?"—":String(value);
-  return <div className={"review-field "+(wide?"wide ":"")+(muted?"muted":"")}><span>{label}</span><b title={display}>{display}</b></div>;
-}
-function EvidenceList({items=[]}){
-  if(!items.length)return <div className="review-empty-state">No source evidence was returned.</div>;
-  return <div className="review-evidence-list">{items.map((item,index)=><div className="review-evidence-row" key={index}>
-    <div><b>{item.field||"Field"}</b><span>{item.sourceText||"No source text recorded"}</span></div>
-    <div><small>{item.page!=null?"Page "+item.page:"Page —"}</small><strong>{Math.round((Number(item.confidence)||0)*100)}%</strong></div>
-  </div>)}</div>;
-}
 
 function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}){
  const [docUrls,setDocUrls]=useState({});
@@ -579,7 +489,6 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    }catch{return 50;}
  });
  const [resizing,setResizing]=useState(false);
- const [previewFixedStyle,setPreviewFixedStyle]=useState({});
 
  useEffect(()=>{let active=true;(async()=>{
    const entries=await Promise.all((pack.uploadedFiles||[]).map(async f=>{
@@ -616,23 +525,7 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
  const selectedDocumentIsImage=/^image\//i.test(selectedDocument?.type||"") || /\.(png|jpe?g|webp|gif)$/i.test(selectedDocument?.name||"");
  const selectedDocumentFrameUrl=selectedDocumentUrl&&selectedDocumentIsPdf?`${selectedDocumentUrl}#page=1&view=FitH&zoom=page-width`:selectedDocumentUrl;
 
- useEffect(()=>{try{localStorage.setItem("customs-idp-review-preview",showPreview?"on":"off");}catch{}},[showPreview]); useEffect(()=>{
-   if(!showPreview){setPreviewFixedStyle({});return;}
-   const updatePreviewPosition=()=>{
-     if(window.innerWidth<=900){setPreviewFixedStyle({});return;}
-     const workspace=document.querySelector(".review-workspace-split");
-     if(!workspace)return;
-     const rect=workspace.getBoundingClientRect();
-     const divider=18;
-     const left=rect.left+(rect.width*(reviewSplit/100))+divider;
-     const width=Math.max(280,rect.width-(rect.width*(reviewSplit/100))-divider);
-     setPreviewFixedStyle({position:"fixed",left:`${left}px`,top:"212px",width:`${width}px`,height:"calc(100vh - 224px)",zIndex:20});
-   };
-   updatePreviewPosition();
-   window.addEventListener("resize",updatePreviewPosition);
-   return()=>window.removeEventListener("resize",updatePreviewPosition);
- },[showPreview,reviewSplit]);
-
+ useEffect(()=>{try{localStorage.setItem("customs-idp-review-preview",showPreview?"on":"off");}catch{}},[showPreview]);
  useEffect(()=>{try{localStorage.setItem("customs-idp-review-split",String(reviewSplit));}catch{}},[reviewSplit]);
 
  useEffect(()=>{
@@ -641,42 +534,16 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
      const workspace=document.querySelector(".review-workspace-split");
      if(!workspace)return;
      const rect=workspace.getBoundingClientRect();
-     const divider=18;
-     const usable=Math.max(1,rect.width-divider);
-     const ratio=((e.clientX-rect.left-(divider/2))/usable)*100;
+     const ratio=((e.clientX-rect.left)/rect.width)*100;
      setReviewSplit(Math.max(32,Math.min(68,ratio)));
    };
-   const onMouseMove=e=>onMove(e);
    const onUp=()=>setResizing(false);
-   window.addEventListener("pointermove",onMove,{capture:true});
-   window.addEventListener("pointerup",onUp,{capture:true});
-   window.addEventListener("mousemove",onMouseMove,{capture:true});
-   window.addEventListener("mouseup",onUp,{capture:true});
+   window.addEventListener("pointermove",onMove);
+   window.addEventListener("pointerup",onUp);
    document.body.classList.add("review-resizing");
-   return()=>{
-     window.removeEventListener("pointermove",onMove,{capture:true});
-     window.removeEventListener("pointerup",onUp,{capture:true});
-     window.removeEventListener("mousemove",onMouseMove,{capture:true});
-     window.removeEventListener("mouseup",onUp,{capture:true});
-     document.body.classList.remove("review-resizing");
-   };
+   return()=>{window.removeEventListener("pointermove",onMove);window.removeEventListener("pointerup",onUp);document.body.classList.remove("review-resizing");};
  },[resizing]);
 
-
- const data=pack.extractedData||{};
- const allLines=Array.isArray(data.lines)?data.lines:[];
- const extractionFields=[
-   ["Document type",data.documentType],["Document type confidence",data.documentTypeConfidence!=null?Math.round(Number(data.documentTypeConfidence)*100)+"%":null],
-   ["Overall extraction confidence",data.confidence!=null?Math.round(Number(data.confidence)*100)+"%":null],
-   ["Invoice number",data.invoiceNumber],["Invoice numbers",Array.isArray(data.invoiceNumbers)?data.invoiceNumbers.join(", "):data.invoiceNumbers],
-   ["Export date",data.exportDate],["Air waybill",data.airWaybill],["Transport reference",data.transportReference],
-   ["Exporter",data.exporter],["Exporter address",data.exporterAddress],["Exporter VAT number",data.exporterVatNo],
-   ["Consignee",data.consignee],["Consignee address",data.consigneeAddress],["Consignee tax ID",data.consigneeTaxId],["Importer",data.importer],
-   ["Country of export",data.countryOfExport],["Destination (source)",data.sourceCountryOfDestination],["Reason for export",data.reasonForExport],
-   ["Delivery term",data.deliveryTerm],["Delivery term place",data.deliveryTermPlace],
-   ["Total packages",data.totalPackages],["Total net weight (kg)",data.totalNetWeight],["Total gross weight (kg)",data.totalGrossWeight],
-   ["Currency",data.currency],["Total invoice value",data.totalInvoiceValue],["Payment method",data.paymentMethod]
- ];
  const extractedPanel=<div className="review-left-column">
    <div className="panel extraction-panel review-data-panel">
      <div className="tabs">
@@ -684,89 +551,59 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
        <button className={tab==="json"?"selected":""} onClick={()=>setTab("json")}>Middleware JSON</button>
      </div>
      {tab==="extraction"&&<>
-       {pack.processingError&&<div className="extraction-error"><b>Extraction failed:</b> {pack.processingError}</div>}
-       <div className="review-extraction-overview">
-         <div className="review-section-head"><div><h3>Document & shipment data</h3><span>Every top-level field returned by the extraction engine is shown below.</span></div></div>
-         <div className="review-field-grid">{extractionFields.map(([label,value])=><ReviewField key={label} label={label} value={value}/>)}</div>
-       </div>
-       <div className="review-extraction-overview">
-         <div className="review-section-head"><div><h3>Invoice totals</h3><span>Source totals are shown before any customer rules or downstream transformations.</span></div></div>
-         <div className="review-field-grid review-totals-grid">
-           <ReviewField label="Total packages" value={data.totalPackages}/>
-           <ReviewField label="Total net weight" value={data.totalNetWeight!=null?data.totalNetWeight+" kg":null}/>
-           <ReviewField label="Total gross weight" value={data.totalGrossWeight!=null?data.totalGrossWeight+" kg":null}/>
-           <ReviewField label="Currency" value={data.currency}/>
-           <ReviewField label="Invoice value" value={data.totalInvoiceValue}/>
-           <ReviewField label="Payment method" value={data.paymentMethod}/>
-         </div>
+       <div className="data-summary">
+         {pack.processingError&&<div className="extraction-error"><b>Extraction failed:</b> {pack.processingError}</div>}
+         <div><span>Invoice total</span><b>{pack.extractedData?.currency?`${pack.extractedData.currency} ${Number(pack.extractedData.totalInvoiceValue||0).toLocaleString(undefined,{minimumFractionDigits:2})}`:"Awaiting extraction"}</b></div>
+         <div><span>Gross mass</span><b>{pack.extractedData?.totalGrossWeight!=null?`${pack.extractedData.totalGrossWeight} kg`:"Awaiting extraction"}</b></div>
+         <div><span>Country export</span><b>{pack.extractedData?.countryOfExport||"Awaiting extraction"}</b></div>
+         <div><span>Destination</span><b>{pack.extractedData?.sourceCountryOfDestination||"Awaiting extraction"}</b></div>
        </div>
        <div className="section-title">
-         <div><h3>Invoice positions</h3><span>{allLines.length} lines extracted · all line-level source fields shown</span></div>
+         <div><h3>Invoice positions</h3><span>{pack.extractedData?.lines?.length||0} lines extracted · AI confidence shown per line</span></div>
          <button className="secondary" onClick={()=>notify("Correction workflow ready — next step is persistent editing")}>Save corrections</button>
        </div>
-       <div className="line-table review-line-table">
+       <div className="line-table">
          <table>
-           <thead><tr><th>#</th><th>DESCRIPTION</th><th>HS CODE</th><th>ORIGIN</th><th>MARKS</th><th>PKGS</th><th>PACK TYPE</th><th>QTY</th><th>UOM</th><th>NET KG</th><th>GROSS KG</th><th>WEIGHT KG</th><th>UNIT VALUE</th><th>TOTAL VALUE</th><th>CURRENCY</th><th>CONF.</th></tr></thead>
-           <tbody>{allLines.map(l=><tr key={l.lineNo}>
-             <td>{l.lineNo??"—"}</td><td><b>{l.description||"—"}</b></td><td>{l.hsCode||"—"}</td><td><span className="country">{l.sourceCountryCode||"—"}</span></td>
-             <td>{l.marks||"—"}</td><td>{l.packages??"—"}</td><td>{l.packagingType||"—"}</td><td>{l.quantity??"—"}</td><td>{l.unitOfMeasure||"—"}</td>
-             <td>{l.netMassKg??"—"}</td><td>{l.grossMassKg??"—"}</td><td>{l.weightKg??"—"}</td><td>{l.unitValue??"—"}</td><td>{l.totalValue??"—"}</td>
-             <td>{l.currency||data.currency||"—"}</td><td>{Math.round((Number(l.confidence)||0)*100)}%</td>
+           <thead><tr><th>#</th><th>DESCRIPTION</th><th>HS CODE</th><th>ORIGIN</th><th>PKGS</th><th>QTY</th><th>WEIGHT KG</th><th>VALUE</th><th></th></tr></thead>
+           <tbody>{(pack.extractedData?.lines||[]).map(l=><tr key={l.lineNo}>
+             <td>{l.lineNo}</td><td><b>{l.description||"—"}</b><small>{Math.round((l.confidence||0)*100)}% confidence</small></td>
+             <td>{l.hsCode||"—"}</td><td><span className="country">{l.sourceCountryCode||"—"}</span></td>
+             <td>{l.packages??"—"} {l.packagingType||""}</td><td>{l.quantity??"—"} {l.unitOfMeasure||""}</td><td>{l.weightKg??"—"}</td>
+             <td>{pack.extractedData?.currency||""} {l.totalValue??"—"}</td><td><MoreHorizontal size={16}/></td>
            </tr>)}</tbody>
          </table>
        </div>
-       <div className="review-extraction-overview">
-         <div className="review-section-head"><div><h3>Extraction checks & warnings</h3><span>Checks returned by the extraction engine before customer validation.</span></div></div>
-         {(data.validationChecks||[]).length
-           ? <div className="review-check-list">{data.validationChecks.map((check,index)=><div className={"review-check-row "+check.status} key={index}><div><b>{check.check}</b><span>{check.detail}</span></div><strong>{check.status.replace("_"," ")}</strong></div>)}
-           : <div className="review-empty-state">No extraction checks returned.</div>}
-         {(data.warnings||[]).length>0&&<div className="review-warning-list">{data.warnings.map((warning,index)=><div key={index}><AlertCircle size={14}/><span>{warning}</span></div>)}</div>}
-       </div>
-       <div className="review-extraction-overview">
-         <div className="review-section-head"><div><h3>Field evidence</h3><span>Source text and confidence returned by the extraction engine.</span></div></div>
-         <EvidenceList items={data.fieldEvidence||[]}/>
-       </div>
-       {allLines.some(line=>Array.isArray(line.evidence)&&line.evidence.length>0)&&<div className="review-extraction-overview">
-         <div className="review-section-head"><div><h3>Line-level evidence</h3><span>Evidence captured against individual invoice positions.</span></div></div>
-         {allLines.map(line=><div className="review-line-evidence" key={line.lineNo}><b>Line {line.lineNo}</b><EvidenceList items={line.evidence||[]}/></div>)}
-       </div>}
      </>}
      {tab==="json"&&<pre className="json">{JSON.stringify({
-       customerId:"ACME-001",identifier:pack.id,customerReference:data.invoiceNumber||"—",customerCustomerNo:"ACME-UK",
-       deliveryTerm_SAD20:data.deliveryTerm||null,deliveryTermPlace_SAD20:data.deliveryTermPlace||null,
-       countryOfExport_SAD15:data.countryOfExport||null,countryOfDestination_SAD17:data.sourceCountryOfDestination||null,
-       totalAmountInvoiced_SAD22:data.totalInvoiceValue||null,totalAmountInvoicedCurrency_SAD22:data.currency||null,
-       totalGrossMass:data.totalGrossWeight||null,ticketNo:pack.ticket,positions:allLines.map((l,i)=>({
-         sequentialNo_SAD32:l.lineNo||i+1,countryOfOrigin_SAD34:l.sourceCountryCode||null,
-         goodsDescription_SAD31ex_im_t:l.description||null,customerHSCode_SAD33ex_im_t:l.hsCode||null,
-         itemPrice_SAD42:l.unitValue||null,itemPrice_SAD42Currency:l.currency||data.currency||null,
-         netMass_SAD38:l.netMassKg??null,grossMass_SAD35:l.grossMassKg??l.weightKg??null,
-         numberOfPackages:l.packages??null,typeOfPackages:l.packagingType||null
-       }))
+       customerId:"ACME-001",identifier:pack.id,customerReference:"88421",customerCustomerNo:"ACME-UK",
+       deliveryTerm_SAD20:"DDP",deliveryTermPlace_SAD20:"Maldon",countryOfExport_SAD15:"HU",
+       countryOfDestination_SAD17:"GB",totalAmountInvoiced_SAD22:720,totalAmountInvoicedCurrency_SAD22:"GBP",
+       totalGrossMass:23.01,ticketNo:pack.ticket,positions:[]
      },null,2)}</pre>}
    </div>
    <aside className="agent-panel review-agent-panel">
      <div className="agent-title"><div className="agent-orb"><Sparkles size={18}/></div><div><b>Extraction Agent</b><span>Online · customer-aware</span></div></div>
-     <div className="agent-insight"><Sparkles size={15}/><div><b>Extraction source layer</b><p>The values above are the raw extraction returned from the document. Customer rules and middleware transformations are applied separately.</p></div></div>
-     <div className="agent-rule"><span>Extraction version</span><b>{pack.extractionVersion||"v2"}</b><small>{data.documentType||"Unknown document"} · {Math.round((Number(data.confidence)||0)*100)}% overall confidence</small></div>
+     <div className="agent-insight"><Sparkles size={15}/><div><b>Validation complete</b><p>I found 1 field that may need review: the gross mass was apportioned across the three lines using the configured net-weight ratio.</p></div></div>
+     <div className="agent-rule"><span>Applied customer rule</span><b>Gross weight apportionment</b><small>Net-weight ratio · Bancale Legno excluded from net weight</small></div>
      <div className="chat"><div className="message agent">I can correct extracted fields, explain why a value was chosen, or save a correction as a customer rule.</div><div className="chat-input"><input value={chat} onChange={e=>setChat(e.target.value)} placeholder="Ask the agent to change something..."/><button onClick={()=>{setChat("");notify("Agent request queued")}}><ArrowRight size={16}/></button></div></div>
    </aside>
  </div>;
 
- const documentPanel=<div className="review-right-column" style={previewFixedStyle}>
+ const documentPanel=<div className="review-right-column">
    <div className="panel review-documents-panel">
      <div className="review-documents">
        <div className="review-documents-head">
          <div><h3>Documents</h3><span>{documentRows.length} documents · select a document to preview it</span></div>
        </div>
-       <div className="review-document-list review-document-name-list">
+       <div className="review-document-list">
          {documentRows.map(f=>{
            const id=f.id||f.name, selected=id===selectedDocumentId;
            const isPdf=/\.pdf$/i.test(f.name||"");
-           return <button type="button" className={"review-document-name "+(selected?"selected":"")} key={id} onClick={()=>setSelectedDocumentId(id)}>
-             <FileText size={14}/>
-             <span title={f.name}>{f.name}</span>
-             <small>{isPdf?"PDF":"DOC"}</small>
+           const isImage=/^image\//i.test(f.type||"") || /\.(png|jpe?g|webp|gif)$/i.test(f.name||"");
+           const thumbUrl=docUrls[id];
+           return <button type="button" className={"review-document-card "+(selected?"selected":"")} key={id} onClick={()=>setSelectedDocumentId(id)}>
+             <div className="review-document-icon">{thumbUrl&&isImage?<img src={thumbUrl} alt="" />:thumbUrl&&isPdf?<iframe src={`${thumbUrl}#page=1&view=FitH&zoom=page-width`} title="" tabIndex="-1"/>:<div className="review-document-placeholder"><FileText size={22}/><span>{isPdf?"PDF":"DOC"}</span></div>}</div>
+             <div className="review-document-copy"><b>{f.name}</b><span>{isPdf?"PDF":(f.type||"Document").split("/").pop().toUpperCase()} · {f.storagePath?"Stored in Supabase":"Browser fallback"}</span></div>
            </button>;
          })}
        </div>
@@ -789,43 +626,28 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    </div>
  </div>;
 
- return <section className="review-page">
+ return <section>
+   <button className="back" onClick={back}>← Back to inbox</button>
    <div className="review-head">
-     <div className="review-head-top">
-       <div className="review-title-block">
-         <button className="review-back-compact" onClick={back}>← Inbox</button>
-         <div className="review-title">
-           <div className="eyebrow">{pack.id} · {pack.ticket}</div>
-           <h1>{pack.customer}</h1>
-         </div>
-       </div>
-       <div className="review-owner-bar">
-         <span>Owner</span>
-         <select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}>
-           <option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option>
-         </select>
-       </div>
-     </div>
-     <div className="review-head-bottom">
-       <div className="review-status-group"><Status status={pack.status}/><span className="review-ticket-meta">{documentLabel(Number(pack.docs)||0)} · received {formatReceived(pack.received)}</span></div>
-       <div className="review-actions">
-         <button className="secondary" onClick={()=>reprocessPack?.(pack)}>Re-process</button>
-         <button className="secondary" onClick={validatePack}>Validate data</button>
-         <button className={pack.status==="Ready"?"primary":"secondary"} onClick={postToLCA}>Post to LCA</button>
-       </div>
+     <div><div className="eyebrow">{pack.id} · {pack.ticket}</div><h1>{pack.customer}</h1><p>{pack.docs} documents · received {pack.received}</p></div>
+     <div className="review-actions">
+       <select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}>
+         <option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option>
+       </select>
+       <Status status={pack.status}/>
+       <button className="secondary" onClick={()=>reprocessPack?.(pack)}>Re-process</button>
+       <button className="secondary" onClick={validatePack}>Validate data</button>
+       <button className={pack.status==="Ready"?"primary":"secondary"} onClick={postToLCA}>Post to LCA</button>
      </div>
    </div>
    <div className="review-preview-toggle-row">
      <label className="review-preview-toggle"><input type="checkbox" checked={showPreview} onChange={e=>setShowPreview(e.target.checked)}/><span className="review-toggle-track"><i></i></span><span>Show preview</span></label>
      <button className="secondary review-fit-btn" onClick={()=>setReviewSplit(50)}>Reset split</button>
    </div>
-   <div className={"review-workspace-split "+(!showPreview?"preview-hidden":"")} style={{"--review-split":`${showPreview?reviewSplit:100}%`}}>
+   <div className={"review-workspace-split "+(!showPreview?"preview-hidden":"")} style={{"--review-split":showPreview?reviewSplit:100}}>
      {extractedPanel}
      {showPreview&&<>
-       <div className={"review-resizer "+(resizing?"active":"")} role="separator" aria-label="Resize extracted data and document preview" title="Drag to resize">
-         <input className="review-split-range" type="range" min="32" max="68" step="1" value={reviewSplit} onChange={e=>setReviewSplit(Number(e.target.value))} aria-label="Data and document split"/>
-         <span className="review-resizer-grip"></span>
-       </div>
+       <div className={"review-resizer "+(resizing?"active":"")} role="separator" aria-label="Resize extracted data and document preview" onPointerDown={e=>{e.preventDefault();setResizing(true);}} title="Drag to resize"></div>
        {documentPanel}
      </>}
    </div>
