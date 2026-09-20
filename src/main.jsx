@@ -731,7 +731,19 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
          {allLines.map(line=><div className="review-line-evidence" key={line.lineNo}><b>Line {line.lineNo}</b><EvidenceList items={line.evidence||[]}/></div>)}
        </div>}
      </>}
-     {tab==="json"&&<pre className="json">{JSON.stringify(buildMiddlewarePayload(pack),null,2)}</pre>}
+     {tab==="json"&&<pre className="json">{JSON.stringify({
+       customerId:"ACME-001",identifier:pack.id,customerReference:data.invoiceNumber||"—",customerCustomerNo:"ACME-UK",
+       deliveryTerm_SAD20:data.deliveryTerm||null,deliveryTermPlace_SAD20:data.deliveryTermPlace||null,
+       countryOfExport_SAD15:data.countryOfExport||null,countryOfDestination_SAD17:data.sourceCountryOfDestination||null,
+       totalAmountInvoiced_SAD22:data.totalInvoiceValue||null,totalAmountInvoicedCurrency_SAD22:data.currency||null,
+       totalGrossMass:data.totalGrossWeight||null,ticketNo:pack.ticket,positions:allLines.map((l,i)=>({
+         sequentialNo_SAD32:l.lineNo||i+1,countryOfOrigin_SAD34:l.sourceCountryCode||null,
+         goodsDescription_SAD31ex_im_t:l.description||null,customerHSCode_SAD33ex_im_t:l.hsCode||null,
+         itemPrice_SAD42:l.unitValue||null,itemPrice_SAD42Currency:l.currency||data.currency||null,
+         netMass_SAD38:l.netMassKg??null,grossMass_SAD35:l.grossMassKg??l.weightKg??null,
+         numberOfPackages:l.packages??null,typeOfPackages:l.packagingType||null
+       }))
+     },null,2)}</pre>}
    </div>
    <aside className="agent-panel review-agent-panel">
      <div className="agent-title"><div className="agent-orb"><Sparkles size={18}/></div><div><b>Extraction Agent</b><span>Online · customer-aware</span></div></div>
