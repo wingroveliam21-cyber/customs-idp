@@ -220,25 +220,59 @@ function App(){
     navigate("review");
     notify("Document uploaded — AI extraction started");
     try {
-      const buffer=await file.arrayBuffer();
-      const bytes=new Uint8Array(buffer);
-      let binary="";
-      const chunk=0x8000;
-      for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunk,bytes.length)));
-      const base64=btoa(binary);
-      const dataUrl=`data:${file.type || "application/octet-stream"};base64,${base64}`;
-      const response=await fetch("/api/extract",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({fileData:dataUrl,filename:file.name,mimeType:file.type})
-      });
-      const result=await response.json();
-      if(!response.ok) throw new Error(result.error || "Extraction failed");
-      const processed={...newPack,status:"Needs review",confidence:Math.round((result.extraction.confidence||0)*100),extractedData:result.extraction};
+      const extractedDocuments=[];
+      for(const uploaded of uploadedFiles){
+        let source=null;
+        const original=selected.find(f=>f.name===uploaded.name && f.size===uploaded.size) || selected.find(f=>f.name===uploaded.name);
+        if(original){
+          source=original;
+        }else if(uploaded.storagePath){
+          const storageResponse=await fetch("/api/storage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"signed-url",path:uploaded.storagePath})});
+          const storageData=await storageResponse.json();
+          if(!storageResponse.ok) throw new Error(storageData.error||`Could not open ${uploaded.name}`);
+          const fileResponse=await fetch(storageData.signedUrl);
+          if(!fileResponse.ok) throw new Error(`Could not download ${uploaded.name}`);
+          source=await fileResponse.blob();
+        }
+        if(!source) throw new Error(`Document ${uploaded.name} is unavailable`);
+        const buffer=await source.arrayBuffer();
+        const bytes=new Uint8Array(buffer);
+        let binary="";
+        const chunk=0x8000;
+        for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode(...bytes.subarray(i,Math.min(i+chunk,bytes.length)));
+        const dataUrl=`data:${source.type || uploaded.type || "application/octet-stream"};base64,${btoa(binary)}`;
+        const response=await fetch("/api/extract",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({fileData:dataUrl,filename:uploaded.name,mimeType:source.type || uploaded.type})
+        });
+        const result=await response.json();
+        if(!response.ok) throw new Error(result.error || `Extraction failed for ${uploaded.name}`);
+        extractedDocuments.push({
+          id:uploaded.id,
+          filename:uploaded.name,
+          mimeType:source.type || uploaded.type,
+          extraction:result.extraction
+        });
+      }
+      const confidences=extractedDocuments.map(d=>Number(d.extraction?.confidence)||0).filter(v=>v>0);
+      const firstInvoice=extractedDocuments.find(d=>d.extraction?.documentType==="commercial_invoice") || extractedDocuments[0];
+      const primary=firstInvoice?.extraction||{};
+      const processed={
+        ...newPack,
+        status:"Needs review",
+        confidence:confidences.length?Math.round((confidences.reduce((a,b)=>a+b,0)/confidences.length)*100):0,
+        extractedData:{
+          ...primary,
+          documents:extractedDocuments,
+          documentCount:extractedDocuments.length,
+          sourceDocuments:extractedDocuments.map(d=>({id:d.id,filename:d.filename,mimeType:d.mimeType,documentType:d.extraction?.documentType||"unknown",confidence:d.extraction?.confidence||0}))
+        }
+      };
       setSelectedPack(processed);
       setLivePacks(prev=>prev.map(p=>p.id===id?processed:p));
       persistPack(processed);
-      notify("AI extraction complete — review the extracted data");
+      notify(`${extractedDocuments.length} document${extractedDocuments.length===1?"":"s"} extracted successfully`);
     } catch(error) {
       const failed={...newPack,status:"Needs review",processingError:error.message};
       setSelectedPack(failed);
