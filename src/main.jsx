@@ -715,8 +715,8 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    </div>
  </div>;
 
- return <section>
-   <button className="back" onClick={back}>← Back to inbox</button>
+ return <section className="review-page">
+   <button className="back review-back" onClick={back}>← Back to inbox</button>
    <div className="review-head">
      <div>
        <div className="eyebrow">{pack.id} · {pack.ticket}</div>
