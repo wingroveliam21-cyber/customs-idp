@@ -694,7 +694,7 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
              <small>{isPdf?"PDF":"DOC"}</small>
            </button>;
          })}
-       </div>       </div>
+       </div>
      </div>
      <div className="review-document-preview">
        <div className="review-document-preview-head">
