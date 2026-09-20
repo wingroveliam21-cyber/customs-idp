@@ -1170,3 +1170,79 @@ tbody tr:has(.row-menu:hover){background:transparent}
   line-height:18px;
   white-space:nowrap;
 }
+
+
+/* Compact two-row review toolbar — inspired by document workspaces, with Customs IDP styling. */
+@media(min-width:901px){
+  .review-page{padding-top:170px !important;}
+  .review-page .review-head{
+    position:fixed !important;
+    top:60px !important;
+    left:250px !important;
+    right:0 !important;
+    width:auto !important;
+    height:108px !important;
+    min-height:108px !important;
+    margin:0 !important;
+    padding:10px 22px 8px !important;
+    box-sizing:border-box !important;
+    display:flex !important;
+    flex-direction:column !important;
+    justify-content:center !important;
+    gap:7px !important;
+    background:#fff !important;
+    border-bottom:1px solid #e7ebf2 !important;
+    box-shadow:0 3px 12px rgba(15,23,42,.05) !important;
+    z-index:4900 !important;
+  }
+  .sidebar-collapsed .review-page .review-head{left:104px !important;}
+  .review-head-top,
+  .review-head-bottom{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    min-width:0;
+  }
+  .review-head-top{min-height:39px;}
+  .review-head-bottom{min-height:38px;}
+  .review-title-block{display:flex;align-items:center;gap:14px;min-width:0;}
+  .review-back-compact{
+    border:1px solid #dce3ed;
+    background:#f8fafc;
+    color:#526176;
+    border-radius:6px;
+    padding:6px 9px;
+    font-size:10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .review-back-compact:hover{background:#f1f5f9;color:#1e293b;}
+  .review-title{min-width:0;}
+  .review-title .eyebrow{margin:0 0 2px;font-size:8px;}
+  .review-title h1{margin:0;font-size:16px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55vw;}
+  .review-owner-bar{display:flex;align-items:center;gap:7px;color:#7c8799;font-size:9px;white-space:nowrap;}
+  .review-owner-bar .review-owner{min-width:155px;height:32px;}
+  .review-status-group{display:flex;align-items:center;gap:12px;min-width:0;}
+  .review-ticket-meta{font-size:9px;color:#7c8799;white-space:nowrap;}
+  .review-head-bottom .review-actions{display:flex;align-items:center;gap:8px;margin-left:auto;}
+  .review-head-bottom .review-actions .secondary,
+  .review-head-bottom .review-actions .primary{height:32px;padding:7px 12px;font-size:10px;}
+  .review-page .review-preview-toggle-row{
+    position:fixed !important;
+    top:168px !important;
+    left:250px !important;
+    right:0 !important;
+    width:auto !important;
+    height:42px !important;
+    min-height:42px !important;
+    margin:0 !important;
+    padding:7px 22px !important;
+    box-sizing:border-box !important;
+    background:#fff !important;
+    border-bottom:1px solid #edf0f4 !important;
+    z-index:4899 !important;
+  }
+  .sidebar-collapsed .review-page .review-preview-toggle-row{left:104px !important;}
+  .review-page .review-preview-toggle-row .review-meta-row{display:none;}
+}
