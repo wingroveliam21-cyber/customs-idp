@@ -1160,3 +1160,13 @@ tbody tr:has(.row-menu:hover){background:transparent}
     padding:8px 30px !important;
   }
 }
+
+
+/* Review metadata shares the fixed row with the preview controls. */
+.review-preview-toggle-row .review-meta-row{
+  margin-right:auto;
+  color:#526176;
+  font-size:10px;
+  line-height:18px;
+  white-space:nowrap;
+}
