@@ -968,3 +968,59 @@ tbody tr:has(.row-menu:hover){background:transparent}
     background:#fff;
   }
 }
+
+
+/* Final review header lock: keep the complete pack header/actions permanently visible. */
+@media(min-width:901px){
+  .review-page{
+    padding-top:132px !important;
+  }
+  .review-page .review-head{
+    position:fixed !important;
+    top:60px !important;
+    left:250px !important;
+    right:0 !important;
+    width:auto !important;
+    height:72px !important;
+    min-height:72px !important;
+    margin:0 !important;
+    padding:10px 30px !important;
+    display:flex !important;
+    align-items:center !important;
+    box-sizing:border-box !important;
+    background:#fff !important;
+    border-bottom:1px solid #e7ebf2 !important;
+    box-shadow:0 4px 14px rgba(15,23,42,.06) !important;
+    z-index:2000 !important;
+    transform:translateZ(0);
+  }
+  .sidebar-collapsed .review-page .review-head{
+    left:104px !important;
+  }
+  .review-page .review-head > div:first-child{
+    min-width:0;
+  }
+  .review-page .review-actions{
+    margin-left:auto;
+    flex-shrink:0;
+  }
+  .review-page .review-preview-toggle-row{
+    position:fixed !important;
+    top:132px !important;
+    left:250px !important;
+    right:0 !important;
+    width:auto !important;
+    height:40px !important;
+    min-height:40px !important;
+    margin:0 !important;
+    padding:8px 30px !important;
+    box-sizing:border-box !important;
+    background:#fff !important;
+    border-bottom:1px solid #edf0f4 !important;
+    z-index:1999 !important;
+    transform:translateZ(0);
+  }
+  .sidebar-collapsed .review-page .review-preview-toggle-row{
+    left:104px !important;
+  }
+}
