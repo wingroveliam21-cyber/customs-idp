@@ -911,3 +911,60 @@ tbody tr:has(.row-menu:hover){background:transparent}
 .row-menu-popover button{width:100%;border:0;background:transparent;color:#b42318;text-align:left;border-radius:5px;padding:9px 10px;font-size:12px;display:flex;align-items:center;gap:7px;cursor:pointer}
 .row-menu-popover button:hover{background:#fff1f0}
 .table-wrap th{font-size:11px}.table-wrap td{font-size:13px}.table-wrap td b{font-size:13px}.table-wrap td small{font-size:11px}
+
+
+/* Review controls: fixed to the viewport rather than participating in page scroll. */
+@media(min-width:901px){
+  .review-page{padding-top:118px;}
+  .review-page .review-head{
+    position:fixed;
+    top:60px;
+    left:250px;
+    right:0;
+    z-index:1500;
+    box-sizing:border-box;
+    margin:0;
+    padding:12px 30px;
+    min-height:70px;
+    background:#fff;
+    border-bottom:1px solid #e7ebf2;
+    box-shadow:0 4px 14px rgba(15,23,42,.06);
+  }
+  .sidebar-collapsed .review-page .review-head{
+    left:104px;
+  }
+  .review-page .review-preview-toggle-row{
+    position:fixed;
+    top:130px;
+    left:250px;
+    right:0;
+    z-index:1499;
+    box-sizing:border-box;
+    min-height:40px;
+    margin:0;
+    padding:8px 30px;
+    background:#fff;
+    border-bottom:1px solid #edf0f4;
+  }
+  .sidebar-collapsed .review-page .review-preview-toggle-row{
+    left:104px;
+  }
+  .review-page .review-back{
+    position:relative;
+    z-index:1;
+  }
+}
+@media(max-width:900px){
+  .review-page .review-head{
+    position:sticky;
+    top:60px;
+    z-index:1000;
+    background:#fff;
+  }
+  .review-page .review-preview-toggle-row{
+    position:sticky;
+    top:132px;
+    z-index:999;
+    background:#fff;
+  }
+}
