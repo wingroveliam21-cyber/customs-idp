@@ -550,7 +550,20 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
    {id:"sample-1",name:"Commercial Invoice 88421.pdf"},{id:"sample-2",name:"Packing List 88421.pdf"},
    {id:"sample-3",name:"Certificate of Origin.pdf"},{id:"sample-4",name:"Transport Document.pdf"}
  ];
- const extractedDocuments=pack.extractedData?.documents||[];
+ const extractedDocuments=useMemo(()=>{
+   const stored=Array.isArray(pack.extractedData?.documents)?pack.extractedData.documents:[];
+   if(stored.length)return stored;
+   const primary=pack.extractedData&&Object.keys(pack.extractedData).length?pack.extractedData:null;
+   if(!primary)return [];
+   const fallbackFile=pack.uploadedFiles?.[0];
+   if(!fallbackFile)return [];
+   return [{
+     id:fallbackFile.id||fallbackFile.name,
+     filename:fallbackFile.name,
+     mimeType:fallbackFile.type||"application/octet-stream",
+     extraction:primary
+   }];
+ },[pack.id,pack.extractedData,pack.uploadedFiles]);
  const evidenceFor=doc=>{const e=doc?.extraction||{};const all=[...(e.fieldEvidence||[])];(e.lines||[]).forEach(line=>(line.evidence||[]).forEach(x=>all.push(x)));return all;};
  const getEvidence=(doc,fields=[])=>{const ev=evidenceFor(doc);return ev.find(x=>fields.includes(x.field)&&x.page)||ev.find(x=>x.page);};
  const sourceButton=(label,docId,page)=><button type="button" className="source-reference" onClick={()=>{setSelectedDocumentId(docId);setPreviewPage(Number(page)||1);setShowPreview(true);}}>{label}</button>;
