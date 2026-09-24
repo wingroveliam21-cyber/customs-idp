@@ -529,187 +529,98 @@ function reconcilePackDocuments(pack){
 
 function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}){
  const [docUrls,setDocUrls]=useState({});
- const [tab,setTab]=useState("extraction");
  const [chat,setChat]=useState("");
+ const [messages,setMessages]=useState([]);
  const [selectedDocumentId,setSelectedDocumentId]=useState(null);
- const [showPreview,setShowPreview]=useState(()=>{
-   try{return localStorage.getItem("customs-idp-review-preview")!=="off";}catch{return true;}
- });
- const [reviewSplit,setReviewSplit]=useState(()=>{
-   try{
-     const saved=Number(localStorage.getItem("customs-idp-review-split"));
-     return Number.isFinite(saved)&&saved>=32&&saved<=68?saved:50;
-   }catch{return 50;}
- });
+ const [previewPage,setPreviewPage]=useState(1);
+ const [showPreview,setShowPreview]=useState(()=>{try{return localStorage.getItem("customs-idp-review-preview")!=="off";}catch{return true;}});
+ const [reviewSplit,setReviewSplit]=useState(()=>{try{const saved=Number(localStorage.getItem("customs-idp-review-split"));return Number.isFinite(saved)&&saved>=32&&saved<=68?saved:48;}catch{return 48;}});
  const [resizing,setResizing]=useState(false);
 
- useEffect(()=>{let active=true;(async()=>{
-   const entries=await Promise.all((pack.uploadedFiles||[]).map(async f=>{
-     try{
-       if(f.storagePath){
-         const response=await fetch("/api/storage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"signed-url",path:f.storagePath})});
-         const data=await response.json();
-         if(response.ok&&data.signedUrl)return [f.id,data.signedUrl];
-       }
-       const file=await getUploadedDocument(f.id);
-       return file?[f.id,URL.createObjectURL(file)]:null;
-     }catch{return null;}
-   }));
-   if(active)setDocUrls(Object.fromEntries(entries.filter(Boolean)));
- })();return()=>{active=false;};},[pack.id,pack.uploadedFiles]);
+ useEffect(()=>{let active=true;(async()=>{const entries=await Promise.all((pack.uploadedFiles||[]).map(async f=>{try{if(f.storagePath){const response=await fetch("/api/storage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"signed-url",path:f.storagePath})});const data=await response.json();if(response.ok&&data.signedUrl)return [f.id,data.signedUrl];}const file=await getUploadedDocument(f.id);return file?[f.id,URL.createObjectURL(file)]:null;}catch{return null;}}));if(active)setDocUrls(Object.fromEntries(entries.filter(Boolean)));})();return()=>{active=false;};},[pack.id,pack.uploadedFiles]);
 
- const documentRows=pack.uploadedFiles?.length
-   ? pack.uploadedFiles
-   : [
-       {id:"sample-1",name:"Commercial Invoice 88421.pdf"},
-       {id:"sample-2",name:"Packing List 88421.pdf"},
-       {id:"sample-3",name:"Certificate of Origin.pdf"},
-       {id:"sample-4",name:"Transport Document.pdf"}
-     ];
+ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
+   {id:"sample-1",name:"Commercial Invoice 88421.pdf"},{id:"sample-2",name:"Packing List 88421.pdf"},
+   {id:"sample-3",name:"Certificate of Origin.pdf"},{id:"sample-4",name:"Transport Document.pdf"}
+ ];
+ const extractedDocuments=pack.extractedData?.documents||[];
+ const evidenceFor=doc=>{const e=doc?.extraction||{};const all=[...(e.fieldEvidence||[])];(e.lines||[]).forEach(line=>(line.evidence||[]).forEach(x=>all.push(x)));return all;};
+ const getEvidence=(doc,fields=[])=>{const ev=evidenceFor(doc);return ev.find(x=>fields.includes(x.field)&&x.page)||ev.find(x=>x.page);};
+ const sourceButton=(label,docId,page)=><button type="button" className="source-reference" onClick={()=>{setSelectedDocumentId(docId);setPreviewPage(Number(page)||1);setShowPreview(true);}}>{label}</button>;
 
- useEffect(()=>{
-   if(!documentRows.length){setSelectedDocumentId(null);return;}
-   setSelectedDocumentId(current=>documentRows.some(d=>(d.id||d.name)===current)?current:(documentRows[0].id||documentRows[0].name));
- },[pack.id,pack.uploadedFiles?.length]);
+ const buildSummary=()=>{
+   const docs=extractedDocuments;
+   if(!docs.length)return [{type:"agent",text:pack.processingError?"I couldn't complete the extraction. "+pack.processingError:"I'm waiting for the document extraction to finish."}];
+   const out=[{type:"agent",text:"I've processed "+docs.length+" document"+(docs.length===1?"":"s")+" from this pack. I've kept the extracted values tied to their source documents so you can see exactly where each value came from."}];
+   docs.forEach(doc=>{
+     const e=doc.extraction||{},ev=evidenceFor(doc),pages=[...new Set(ev.map(x=>Number(x.page)).filter(Boolean))],details=[];
+     if(e.documentType)details.push(e.documentType.replaceAll("_"," "));
+     if(e.invoiceNumber)details.push("invoice "+e.invoiceNumber);
+     if(e.lines?.length)details.push(e.lines.length+" goods line"+(e.lines.length===1?"":"s"));
+     if(e.totalInvoiceValue!=null)details.push((e.currency||"")+" "+e.totalInvoiceValue+" invoice value");
+     if(e.totalPackages!=null)details.push(e.totalPackages+" packages");
+     if(e.totalGrossWeight!=null)details.push(e.totalGrossWeight+" kg gross");
+     if(e.totalNetWeight!=null)details.push(e.totalNetWeight+" kg net");
+     const ref=getEvidence(doc,["invoiceNumber","totalInvoiceValue","totalGrossWeight","totalNetWeight","totalPackages"]);
+     const label=doc.filename+(ref?.page?" — page "+ref.page:(pages.length?" — pages "+pages.join(", "):""));
+     out.push({type:"document",docId:doc.id,text:details.join(" · ")||"document processed",ref:sourceButton(label,doc.id,ref?.page||pages[0]||1)});
+   });
+   const conflicts=[];
+   [["gross weight","totalGrossWeight"],["net weight","totalNetWeight"],["invoice value","totalInvoiceValue"],["currency","currency"],["export country","countryOfExport"],["destination","sourceCountryOfDestination"],["packages","totalPackages"]].forEach(([label,key])=>{
+     const vals=docs.map(d=>({d,value:d.extraction?.[key]})).filter(x=>x.value!==undefined&&x.value!==null&&x.value!=="");
+     if([...new Set(vals.map(x=>String(x.value)))].length>1)conflicts.push({label,vals});
+   });
+   if(conflicts.length){
+     out.push({type:"warning",text:"I found "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+". I have not silently chosen a value."});
+     conflicts.forEach(c=>out.push({type:"conflict",text:c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · ")}));
+   }else out.push({type:"agent",text:"The extracted documents do not currently contain conflicting values in the fields I checked. Customer-specific rules and customs calculations remain separate from source extraction."});
+   return out;
+ };
+ useEffect(()=>{setMessages(buildSummary());},[pack.id,pack.extractedData,pack.processingError]);
+ useEffect(()=>{if(!documentRows.length){setSelectedDocumentId(null);return;}setSelectedDocumentId(current=>documentRows.some(d=>(d.id||d.name)===current)?current:(documentRows[0].id||documentRows[0].name));},[pack.id,pack.uploadedFiles?.length]);
 
  const selectedDocument=documentRows.find(d=>(d.id||d.name)===selectedDocumentId)||documentRows[0];
- const selectedDocumentUrl=selectedDocument ? docUrls[selectedDocument.id] : null;
+ const selectedDocumentUrl=selectedDocument?docUrls[selectedDocument.id]:null;
  const selectedDocumentIsPdf=/\.pdf$/i.test(selectedDocument?.name||"");
- const selectedDocumentIsImage=/^image\//i.test(selectedDocument?.type||"") || /\.(png|jpe?g|webp|gif)$/i.test(selectedDocument?.name||"");
- const selectedDocumentFrameUrl=selectedDocumentUrl&&selectedDocumentIsPdf?`${selectedDocumentUrl}#page=1&view=FitH&zoom=page-width`:selectedDocumentUrl;
-
+ const selectedDocumentIsImage=/^image\//i.test(selectedDocument?.type||"")||/\.(png|jpe?g|webp|gif)$/i.test(selectedDocument?.name||"");
+ const selectedDocumentFrameUrl=selectedDocumentUrl&&selectedDocumentIsPdf?selectedDocumentUrl+"#page="+previewPage+"&view=FitH&zoom=page-width":selectedDocumentUrl;
  useEffect(()=>{try{localStorage.setItem("customs-idp-review-preview",showPreview?"on":"off");}catch{}},[showPreview]);
  useEffect(()=>{try{localStorage.setItem("customs-idp-review-split",String(reviewSplit));}catch{}},[reviewSplit]);
+ useEffect(()=>{if(!resizing)return;const onMove=e=>{const workspace=document.querySelector(".review-workspace-split");if(!workspace)return;const rect=workspace.getBoundingClientRect();setReviewSplit(Math.max(32,Math.min(68,((e.clientX-rect.left)/rect.width)*100)));};const onUp=()=>setResizing(false);window.addEventListener("pointermove",onMove);window.addEventListener("pointerup",onUp);document.body.classList.add("review-resizing");return()=>{window.removeEventListener("pointermove",onMove);window.removeEventListener("pointerup",onUp);document.body.classList.remove("review-resizing");};},[resizing]);
 
- useEffect(()=>{
-   if(!resizing)return;
-   const onMove=e=>{
-     const workspace=document.querySelector(".review-workspace-split");
-     if(!workspace)return;
-     const rect=workspace.getBoundingClientRect();
-     const ratio=((e.clientX-rect.left)/rect.width)*100;
-     setReviewSplit(Math.max(32,Math.min(68,ratio)));
-   };
-   const onUp=()=>setResizing(false);
-   window.addEventListener("pointermove",onMove);
-   window.addEventListener("pointerup",onUp);
-   document.body.classList.add("review-resizing");
-   return()=>{window.removeEventListener("pointermove",onMove);window.removeEventListener("pointerup",onUp);document.body.classList.remove("review-resizing");};
- },[resizing]);
-
- const extractedPanel=<div className="review-left-column">
-   <div className="panel extraction-panel review-data-panel">
-     <div className="tabs">
-       <button className={tab==="extraction"?"selected":""} onClick={()=>setTab("extraction")}>Extracted data</button>
-       <button className={tab==="reconciliation"?"selected":""} onClick={()=>setTab("reconciliation")}>Reconciliation</button>
-       <button className={tab==="json"?"selected":""} onClick={()=>setTab("json")}>Middleware JSON</button>
-     </div>
-     {tab==="extraction"&&<>
-       <div className="data-summary">
-         {pack.processingError&&<div className="extraction-error"><b>Extraction failed:</b> {pack.processingError}</div>}
-         <div><span>Invoice total</span><b>{pack.extractedData?.currency?`${pack.extractedData.currency} ${Number(pack.extractedData.totalInvoiceValue||0).toLocaleString(undefined,{minimumFractionDigits:2})}`:"Awaiting extraction"}</b></div>
-         <div><span>Gross mass</span><b>{pack.extractedData?.totalGrossWeight!=null?`${pack.extractedData.totalGrossWeight} kg`:"Awaiting extraction"}</b></div>
-         <div><span>Country export</span><b>{pack.extractedData?.countryOfExport||"Awaiting extraction"}</b></div>
-         <div><span>Destination</span><b>{pack.extractedData?.sourceCountryOfDestination||"Awaiting extraction"}</b></div>
-       </div>
-       <div className="section-title">
-         <div><h3>Invoice positions</h3><span>{pack.extractedData?.lines?.length||0} lines extracted · AI confidence shown per line</span></div>
-         <button className="secondary" onClick={()=>notify("Correction workflow ready — next step is persistent editing")}>Save corrections</button>
-       </div>
-       <div className="line-table">
-         <table>
-           <thead><tr><th>#</th><th>DESCRIPTION</th><th>HS CODE</th><th>ORIGIN</th><th>PKGS</th><th>QTY</th><th>WEIGHT KG</th><th>VALUE</th><th></th></tr></thead>
-           <tbody>{(pack.extractedData?.lines||[]).map(l=><tr key={l.lineNo}>
-             <td>{l.lineNo}</td><td><b>{l.description||"—"}</b><small>{Math.round((l.confidence||0)*100)}% confidence</small></td>
-             <td>{l.hsCode||"—"}</td><td><span className="country">{l.sourceCountryCode||"—"}</span></td>
-             <td>{l.packages??"—"} {l.packagingType||""}</td><td>{l.quantity??"—"} {l.unitOfMeasure||""}</td><td>{l.weightKg??"—"}</td>
-             <td>{pack.extractedData?.currency||""} {l.totalValue??"—"}</td><td><MoreHorizontal size={16}/></td>
-           </tr>)}</tbody>
-         </table>
-       </div>
-     </>}
-     {tab==="reconciliation"&&(()=>{const r=reconcilePackDocuments(pack);return <div className="data-summary">
-       <div><span>Reconciliation</span><b>{r.status==="pass"?"PASS":r.status==="conflict"?"REVIEW":"NOT READY"}</b></div>
-       <div><span>Documents</span><b>{r.documentCount||0}</b></div>
-       <div><span>Result</span><b>{r.summary}</b></div>
-       {r.checks.map((check,i)=><div key={i}><span>{check.label}</span><b>{check.status.replaceAll("_"," ")} — {check.detail}</b></div>)}
-       {r.conflicts.map((x,i)=><div className="extraction-error" key={"c"+i}><b>{x.label} conflict:</b> {x.values.map(v=>v.name+" = "+(v.value??v.count)).join(" | ")}</div>)}
-     </div>})()}
-     {tab==="json"&&<pre className="json">{JSON.stringify({
-       customerId:"ACME-001",identifier:pack.id,customerReference:"88421",customerCustomerNo:"ACME-UK",
-       deliveryTerm_SAD20:"DDP",deliveryTermPlace_SAD20:"Maldon",countryOfExport_SAD15:"HU",
-       countryOfDestination_SAD17:"GB",totalAmountInvoiced_SAD22:720,totalAmountInvoicedCurrency_SAD22:"GBP",
-       totalGrossMass:23.01,ticketNo:pack.ticket,positions:[]
-     },null,2)}</pre>}
-   </div>
-   <aside className="agent-panel review-agent-panel">
-     <div className="agent-title"><div className="agent-orb"><Sparkles size={18}/></div><div><b>Extraction Agent</b><span>Online · customer-aware</span></div></div>
-     <div className="agent-insight"><Sparkles size={15}/><div><b>Validation complete</b><p>I found 1 field that may need review: the gross mass was apportioned across the three lines using the configured net-weight ratio.</p></div></div>
-     <div className="agent-rule"><span>Applied customer rule</span><b>Gross weight apportionment</b><small>Net-weight ratio · Bancale Legno excluded from net weight</small></div>
-     <div className="chat"><div className="message agent">I can correct extracted fields, explain why a value was chosen, or save a correction as a customer rule.</div><div className="chat-input"><input value={chat} onChange={e=>setChat(e.target.value)} placeholder="Ask the agent to change something..."/><button onClick={()=>{setChat("");notify("Agent request queued")}}><ArrowRight size={16}/></button></div></div>
-   </aside>
- </div>;
-
- const documentPanel=<div className="review-right-column">
-   <div className="panel review-documents-panel">
-     <div className="review-documents">
-       <div className="review-documents-head">
-         <div><h3>Documents</h3><span>{documentRows.length} documents · select a document to preview it</span></div>
-       </div>
-       <div className="review-document-list">
-         {documentRows.map(f=>{
-           const id=f.id||f.name, selected=id===selectedDocumentId;
-           const isPdf=/\.pdf$/i.test(f.name||"");
-           const isImage=/^image\//i.test(f.type||"") || /\.(png|jpe?g|webp|gif)$/i.test(f.name||"");
-           const thumbUrl=docUrls[id];
-           return <button type="button" className={"review-document-card "+(selected?"selected":"")} key={id} onClick={()=>setSelectedDocumentId(id)}>
-             <div className="review-document-icon">{thumbUrl&&isImage?<img src={thumbUrl} alt="" />:thumbUrl&&isPdf?<iframe src={`${thumbUrl}#page=1&view=FitH&zoom=page-width`} title="" tabIndex="-1"/>:<div className="review-document-placeholder"><FileText size={22}/><span>{isPdf?"PDF":"DOC"}</span></div>}</div>
-             <div className="review-document-copy"><b>{f.name}</b><span>{isPdf?"PDF":(f.type||"Document").split("/").pop().toUpperCase()} · {f.storagePath?"Stored in Supabase":"Browser fallback"}</span></div>
-           </button>;
-         })}
-       </div>
-     </div>
-     <div className="review-document-preview">
-       <div className="review-document-preview-head">
-         <div><span>DOCUMENT PREVIEW</span><b>{selectedDocument?.name||"No document selected"}</b></div>
-         <small>{selectedDocumentUrl?"Live source document":"Preview unavailable"}</small>
-       </div>
-       <div className="review-document-viewer">
-         <div className="review-viewer-toolbar">
-           <div className="review-viewer-file"><FileText size={14}/><span>{selectedDocument?.name||"No document selected"}</span></div>
-           <div className="review-viewer-controls"><span>1 / 1</span><button type="button">−</button><span>100%</span><button type="button">+</button><button type="button">↗</button></div>
-         </div>
-         <div className={"review-document-preview-body "+(selectedDocumentIsImage?"image-document":"pdf-document")}>
-           {selectedDocumentUrl?(selectedDocumentIsImage?<img src={selectedDocumentUrl} alt={selectedDocument?.name||"Document preview"}/>:<iframe src={selectedDocumentFrameUrl} title={selectedDocument?.name||"Document preview"}/>):<div className="review-document-empty"><FileText size={28}/><b>{selectedDocument?.name||"No document available"}</b><span>The document is not available for preview yet. New uploads are stored in the private Supabase document store.</span></div>}
-         </div>
-       </div>
-     </div>
-   </div>
- </div>;
+ const sendChat=()=>{
+   const q=chat.trim();if(!q)return;const lower=q.toLowerCase();let reply={type:"agent",text:"I can trace that back to the uploaded documents. Tell me which value you want changed and I will show the source before applying a correction."};
+   const target=extractedDocuments.find(d=>lower.includes((d.filename||"").toLowerCase()));
+   if(lower.includes("where")||lower.includes("source")||lower.includes("from where")){const doc=target||extractedDocuments[0],ev=getEvidence(doc,[]);reply=doc?{type:"agent",text:doc.filename+" is the source document I would inspect first. The extracted evidence is on page "+(ev?.page||1)+".",ref:sourceButton(doc.filename+" — page "+(ev?.page||1),doc.id,ev?.page||1)}:reply;}
+   else if(lower.includes("why")||lower.includes("discrep"))reply={type:"agent",text:"The extraction layer does not silently resolve conflicting source values. I keep the source values separate, show the discrepancy, and wait for your instruction or a customer rule before changing the customs dataset."};
+   else if(lower.includes("gross")||lower.includes("weight"))reply={type:"agent",text:"Gross and net weights are first taken from the source documents. Customer apportionment rules are applied only after extraction. I can show the source value and the calculation once the customer strategy is applied."};
+   else if(lower.includes("rule"))reply={type:"agent",text:"Customer rules are applied after source extraction. A correction can be turned into a customer-specific rule only after you confirm it."};
+   setMessages(m=>[...m,{type:"user",text:q},reply]);setChat("");
+ };
+ const renderMessage=(m,i)=><div className={"chat-message-row "+(m.type||"agent")} key={i}><div className="chat-message-avatar">{m.type==="user"?"You":<Sparkles size={15}/>}</div><div className="chat-message-content"><div className="chat-message-text">{m.text}</div>{m.ref&&<div className="chat-source">{m.ref}</div>}</div></div>;
 
  return <section>
    <button className="back" onClick={back}>← Back to inbox</button>
-   <div className="review-head">
-     <div><div className="eyebrow">{pack.id} · {pack.ticket}</div><h1>{pack.customer}</h1><p>{pack.docs} documents · received {pack.received}</p></div>
-     <div className="review-actions">
-       <select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}>
-         <option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option>
-       </select>
-       <Status status={pack.status}/>
-       <button className="secondary" onClick={()=>reprocessPack?.(pack)}>Re-process</button>
-       <button className="secondary" onClick={validatePack}>Validate data</button>
-       <button className={pack.status==="Ready"?"primary":"secondary"} onClick={postToLCA}>Post to LCA</button>
-     </div>
-   </div>
-   <div className="review-preview-toggle-row">
-     <label className="review-preview-toggle"><input type="checkbox" checked={showPreview} onChange={e=>setShowPreview(e.target.checked)}/><span className="review-toggle-track"><i></i></span><span>Show preview</span></label>
-     <button className="secondary review-fit-btn" onClick={()=>setReviewSplit(50)}>Reset split</button>
-   </div>
+   <div className="review-head"><div><div className="eyebrow">{pack.id} · {pack.ticket}</div><h1>{pack.customer}</h1><p>{pack.docs} documents · received {pack.received}</p></div><div className="review-actions"><select className="owner-select review-owner" value={pack.assignedTo||"Unassigned"} onChange={e=>onAssign?.(pack.id,e.target.value)}><option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option></select><Status status={pack.status}/><button className="secondary" onClick={()=>reprocessPack?.(pack)}>Re-process</button><button className="secondary" onClick={validatePack}>Validate data</button><button className={pack.status==="Ready"?"primary":"secondary"} onClick={postToLCA}>Post to LCA</button></div></div>
+   <div className="review-preview-toggle-row"><label className="review-preview-toggle"><input type="checkbox" checked={showPreview} onChange={e=>setShowPreview(e.target.checked)}/><span className="review-toggle-track"><i></i></span><span>Show preview</span></label><button className="secondary review-fit-btn" onClick={()=>setReviewSplit(50)}>Reset split</button></div>
    <div className={"review-workspace-split "+(!showPreview?"preview-hidden":"")} style={{"--review-split":showPreview?reviewSplit:100}}>
-     {extractedPanel}
-     {showPreview&&<>
-       <div className={"review-resizer "+(resizing?"active":"")} role="separator" aria-label="Resize extracted data and document preview" onPointerDown={e=>{e.preventDefault();setResizing(true);}} title="Drag to resize"></div>
-       {documentPanel}
+     <div className="review-left-column"><div className="panel chat-review-panel">
+       <div className="chat-review-head"><div className="agent-title"><div className="agent-orb"><Sparkles size={18}/></div><div><b>Extraction Agent</b><span>Source-grounded document review</span></div></div><span className="online-pill"><span></span> Ready</span></div>
+       <div className="chat-review-intro">I read the complete document pack first. The conversation below is the review record: extracted values stay connected to their source, and discrepancies are surfaced rather than silently resolved.</div>
+       <div className="chat-history chat-review-history">{messages.map(renderMessage)}</div>
+       <div className="chat-input chat-review-input"><input value={chat} onChange={e=>setChat(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder="Ask where a value came from, why it was used, or tell the agent what to change..."/><button onClick={sendChat}><ArrowRight size={16}/></button></div>
+     </div></div>
+     {showPreview&&<><div className={"review-resizer "+(resizing?"active":"")} role="separator" aria-label="Resize chat and document preview" onPointerDown={e=>{e.preventDefault();setResizing(true);}} title="Drag to resize"></div>
+       <div className="review-right-column"><div className="panel review-documents-panel">
+         <div className="review-documents"><div className="review-documents-head"><div><h3>Documents</h3><span>{documentRows.length} documents · source links open the relevant document</span></div></div>
+           <div className="review-document-list">{documentRows.map(f=>{const id=f.id||f.name,selected=id===selectedDocumentId,isPdf=/\.pdf$/i.test(f.name||""),isImage=/^image\//i.test(f.type||"")||/\.(png|jpe?g|webp|gif)$/i.test(f.name||""),thumbUrl=docUrls[id];return <button type="button" className={"review-document-card "+(selected?"selected":"")} key={id} onClick={()=>{setSelectedDocumentId(id);setPreviewPage(1);}}><div className="review-document-icon">{thumbUrl&&isImage?<img src={thumbUrl} alt=""/>:thumbUrl&&isPdf?<iframe src={thumbUrl+"#page=1&view=FitH&zoom=page-width"} title="" tabIndex="-1"/>:<div className="review-document-placeholder"><FileText size={22}/><span>{isPdf?"PDF":"DOC"}</span></div>}</div><div className="review-document-copy"><b>{f.name}</b><span>{isPdf?"PDF":(f.type||"Document").split("/").pop().toUpperCase()} · {f.storagePath?"Stored in Supabase":"Browser fallback"}</span></div></button>})}</div>
+         </div>
+         <div className="review-document-preview"><div className="review-document-preview-head"><div><span>DOCUMENT PREVIEW · PAGE {previewPage}</span><b>{selectedDocument?.name||"No document selected"}</b></div><small>{selectedDocumentUrl?"Live source document":"Preview unavailable"}</small></div>
+           <div className="review-document-viewer"><div className="review-viewer-toolbar"><div className="review-viewer-file"><FileText size={14}/><span>{selectedDocument?.name||"No document selected"}</span></div><div className="review-viewer-controls"><span>Page {previewPage}</span><button type="button" onClick={()=>setPreviewPage(p=>Math.max(1,p-1))}>−</button><button type="button" onClick={()=>setPreviewPage(p=>p+1)}>+</button></div></div>
+             <div className={"review-document-preview-body "+(selectedDocumentIsImage?"image-document":"pdf-document")}>{selectedDocumentUrl?(selectedDocumentIsImage?<img src={selectedDocumentUrl} alt={selectedDocument?.name||"Document preview"}/>:<iframe src={selectedDocumentFrameUrl} title={selectedDocument?.name||"Document preview"}/>):<div className="review-document-empty"><FileText size={28}/><b>{selectedDocument?.name||"No document available"}</b><span>The document is not available for preview yet. New uploads are stored in the private Supabase document store.</span></div>}</div>
+           </div>
+         </div>
+       </div></div>
      </>}
    </div>
  </section>
