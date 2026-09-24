@@ -610,9 +610,17 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    updatePack?.({...pack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined});
    return "I saved that correction to the pack and cleared the previous validation result. The affected data needs to be validated again.";
  };
+ const persistConversation=conversation=>{
+   const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
+   data.agentMessages=conversation;
+   updatePack?.({...pack,extractedData:data});
+ };
  const sendChat=async()=>{
    const q=chat.trim();if(!q)return;
-   setMessages(m=>[...m,{type:"user",text:q},{type:"agent",text:"I'm checking the uploaded documents and their source evidence..."}]);setChat("");
+   const userMessage={type:"user",text:q};
+   const thinking={type:"agent",text:"I'm checking the uploaded documents and their source evidence..."};
+   const before=[...messages,userMessage,thinking];
+   setMessages(before);setChat("");
    try{
      const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack})});
      const result=await response.json();
@@ -622,11 +630,14 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
        const saved=applyAgentAction({kind:result.action,target:result.target});
        if(saved)reply+=" "+saved;
      }
-     const ev=result.target?.sourceDocumentId?extractedDocuments.find(d=>d.id===result.target.sourceDocumentId):null;
-     const ref=ev&&result.target?.sourcePage?sourceButton(ev.filename+" — page "+result.target.sourcePage,ev.id,result.target.sourcePage):null;
-     setMessages(m=>[...m.filter((x,i)=>i!==m.length-1),{type:"agent",text:reply,ref}]);
+     const agentMessage={type:"agent",text:reply,sourceDocumentId:result.target?.sourceDocumentId||null,sourcePage:result.target?.sourcePage||null};
+     const completed=[...messages,userMessage,agentMessage];
+     setMessages(completed);
+     persistConversation(completed);
    }catch(error){
-     setMessages(m=>[...m.filter((x,i)=>i!==m.length-1),{type:"agent",text:"I couldn't reach the review agent. "+error.message}]);
+     const completed=[...messages,userMessage,{type:"agent",text:"I couldn't reach the review agent. "+error.message}];
+     setMessages(completed);
+     persistConversation(completed);
    }
  };
  const renderMessage=(m,i)=><div className={"chat-message-row "+(m.type||"agent")} key={i}><div className="chat-message-avatar">{m.type==="user"?"You":<Sparkles size={15}/>}</div><div className="chat-message-content"><div className="chat-message-text">{m.text}</div>{m.ref&&<div className="chat-source">{m.ref}</div>}</div></div>;
