@@ -581,39 +581,68 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      const ev=evidenceFor(doc);
      return ref?.page||ev.find(x=>x.page)?.page||1;
    };
+   const lineKey=line=>String(line?.hsCode||"")+"|"+String(line?.description||"").trim().toLowerCase();
+   const normaliseLine=line=>({
+     description:line?.description,
+     hs:line?.hsCode,
+     origin:line?.sourceCountryCode,
+     quantity:line?.quantity,
+     net:line?.netMassKg,
+     gross:line?.grossMassKg,
+     value:line?.totalValue,
+     unitValue:line?.unitValue
+   });
 
    const out=[{
      type:"agent",
-     text:"Extraction complete. I've combined the uploaded documents into one customs-entry view and checked the key fields across the pack.",
+     text:"Extraction complete. I've combined the uploaded documents into one customs-entry view. Matching goods lines are grouped so the same item is not shown twice.",
      persist:false
    }];
 
-   const customsLines=[];
+   const grouped=new Map();
    docs.forEach(doc=>{
      const e=doc.extraction||{};
-     const lines=Array.isArray(e.lines)?e.lines:[];
-     lines.forEach((line,index)=>{
-       customsLines.push(
-         "Line "+(customsLines.length+1)+": "+value(line.description||("Line "+(index+1)))+
-         " | HS "+value(line.hsCode||line.customerHSCode)+
-         " | Origin "+value(line.countryOfOrigin)+
-         " | Qty "+value(line.quantity)+
-         " | Net "+value(line.netMassKg)+" kg"+
-         " | Gross "+value(line.grossMassKg)+" kg"+
-         " | Value "+value(line.lineTotal??line.itemPrice)
-       );
+     (Array.isArray(e.lines)?e.lines:[]).forEach((line,index)=>{
+       const key=lineKey(line)||("line-"+index);
+       if(!grouped.has(key))grouped.set(key,{line:normaliseLine(line),sources:[]});
+       grouped.get(key).sources.push({doc,line});
      });
    });
+
+   const customsLines=[];
+   for(const item of grouped.values()){
+     const base=item.line;
+     const invoiceSource=item.sources.find(x=>x.doc.extraction?.documentType==="commercial_invoice")||item.sources[0];
+     const invoiceLine=invoiceSource?.line||{};
+     const otherSources=item.sources.filter(x=>x!==invoiceSource);
+     const parts=[
+       base.description||"Unnamed goods line",
+       "HS "+value(base.hs),
+       "Origin "+value(base.origin),
+       "Qty "+value(base.quantity),
+       "Net "+value(base.net)+" kg",
+       "Gross "+value(base.gross)+" kg",
+       "Value "+value(base.value)
+     ];
+     if(otherSources.length){
+       const checks=otherSources.map(x=>{
+         const l=x.line||{};
+         return x.doc.filename+": net "+value(l.netMassKg)+" kg, gross "+value(l.grossMassKg)+" kg";
+       });
+       parts.push("Other source: "+checks.join(" · "));
+     }
+     customsLines.push("Line "+(customsLines.length+1)+": "+parts.join(" | "));
+   }
 
    const combined=[
      "Customs entry",
      "Invoice: "+value(first.invoiceNumber),
-     "Exporter: "+value(first.exporterName||first.exporter||first.exporterCompany),
-     "Consignee: "+value(first.consigneeName||first.importerName||first.consignee),
+     "Exporter: "+value(first.exporter),
+     "Consignee: "+value(first.consignee),
      "Currency: "+value(first.currency),
      "Invoice value: "+value(first.totalInvoiceValue),
      "Export: "+value(first.countryOfExport),
-     "Destination: "+value(first.sourceCountryOfDestination||first.countryOfDestination),
+     "Destination: "+value(first.sourceCountryOfDestination),
      "Packages: "+value(first.totalPackages),
      "Gross weight: "+value(first.totalGrossWeight)+" kg",
      "Net weight: "+value(first.totalNetWeight)+" kg",
@@ -621,12 +650,13 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      customsLines.length?"Goods lines:\n"+customsLines.join("\n"):"Goods lines: none extracted"
    ].join("\n");
 
+   const invoiceDoc=docs.find(d=>d.extraction?.documentType==="commercial_invoice")||docs[0];
    out.push({
      type:"agent",
      text:combined,
-     sourceDocumentId:docs[0].id,
-     sourcePage:sourceFor(docs[0]),
-     sourceLabel:docs[0].filename+" — page "+sourceFor(docs[0]),
+     sourceDocumentId:invoiceDoc.id,
+     sourcePage:sourceFor(invoiceDoc),
+     sourceLabel:invoiceDoc.filename+" — page "+sourceFor(invoiceDoc),
      persist:false
    });
 
@@ -636,31 +666,31 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      if([...new Set(vals.map(x=>String(x.value)))].length>1)conflicts.push({label,vals});
    });
 
+   grouped.forEach(item=>{
+     const sources=item.sources;
+     const fields=["sourceCountryCode","quantity","netMassKg","grossMassKg","totalValue"];
+     fields.forEach(field=>{
+       const vals=sources.map(x=>({doc:x.doc,value:x.line?.[field]})).filter(x=>x.value!==undefined&&x.value!==null&&x.value!=="");
+       if(new Set(vals.map(x=>String(x.value))).size>1){
+         conflicts.push({label:"line "+(item.line.description||"goods")+" "+field,vals});
+       }
+     });
+   });
+
    if(conflicts.length){
      out.push({
        type:"agent",
        text:"Cross-document check — attention required. I found "+conflicts.length+" discrepancy"+(conflicts.length===1?"":"ies")+" and have not silently chosen a value.\n"+
-         conflicts.map(c=>c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · ")).join("\n"),
+         conflicts.map(c=>c.label+": "+c.vals.map(v=>v.doc.filename+" = "+v.value).join(" · ")).join("\n"),
        persist:false
      });
    }else{
      out.push({
        type:"agent",
-       text:"Cross-document check: the key totals checked across the uploaded documents agree. I have not inferred or corrected any source value.",
+       text:"Cross-document check: the key header and line values checked across the uploaded documents agree. I have not inferred or corrected any source value.",
        persist:false
      });
    }
-
-   docs.slice(1).forEach(doc=>{
-     out.push({
-       type:"agent",
-       text:"Source checked: "+doc.filename+". Its extracted values were included in the combined customs-entry view above.",
-       sourceDocumentId:doc.id,
-       sourcePage:sourceFor(doc),
-       sourceLabel:doc.filename+" — page "+sourceFor(doc),
-       persist:false
-     });
-   });
 
    return out;
  };
