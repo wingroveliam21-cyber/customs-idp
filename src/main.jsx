@@ -508,6 +508,25 @@ function InboxPage({packs,query,setQuery,openPack,title="Inbox",onUpload,onAssig
 function PackTable({packs,onOpen,onAssign}){return <div className="table-wrap"><table><thead><tr><th>PACK</th><th>CUSTOMER</th><th>OWNER</th><th>DOCUMENTS</th><th>STATUS</th><th>CONFIDENCE</th><th>RECEIVED</th><th></th></tr></thead><tbody>{packs.map(p=><tr key={p.id} onClick={()=>onOpen(p)}><td><b>{p.id}</b><small>{p.ticket}</small></td><td>{p.customer}</td><td><select className="owner-select" value={p.assignedTo||"Unassigned"} onClick={e=>e.stopPropagation()} onChange={e=>onAssign?.(p.id,e.target.value)}><option>Unassigned</option><option>Liam Wingrove</option><option>Data Processor 1</option><option>Data Processor 2</option><option>Muhammad Amer</option></select></td><td>{p.docs} documents</td><td><Status status={p.status}/></td><td><div className="confidence"><span>{p.confidence}%</span><div><i style={{width:p.confidence+"%"}}></i></div></div></td><td>{p.received}</td><td><button className="row-btn"><MoreHorizontal size={17}/></button></td></tr>)}</tbody></table></div>}
 function Status({status}){let c=status==="Validated"?"good":status==="Processing"?"processing":"review";return <span className={"status "+c}><span></span>{status}</span>}
 
+function reconcilePackDocuments(pack){
+  const docs=Array.isArray(pack?.extractedData?.documents)?pack.extractedData.documents:[];
+  if(docs.length<2) return {status:"not_ready",summary:"At least two extracted documents are required.",checks:[],conflicts:[]};
+  const norm=v=>String(v??"").trim().toLowerCase().replace(/\\s+/g," ");
+  const checks=[]; const conflicts=[];
+  const compare=(label,key)=>{
+    const found=docs.map(d=>({name:d.filename,value:d.extraction?.[key]})).filter(x=>x.value!=null&&x.value!=="");
+    const unique=[...new Set(found.map(x=>norm(x.value)))];
+    if(found.length<2){checks.push({label,status:"not_applicable",detail:"Not enough documents contain this field."});return;}
+    if(unique.length===1) checks.push({label,status:"pass",detail:found.map(x=>x.name+": "+x.value).join(" · ")});
+    else {checks.push({label,status:"conflict",detail:found.map(x=>x.name+": "+x.value).join(" · ")});conflicts.push({label,values:found});}
+  };
+  compare("Invoice number","invoiceNumber"); compare("Country of export","countryOfExport"); compare("Destination","sourceCountryOfDestination");
+  compare("Total packages","totalPackages"); compare("Total net weight","totalNetWeight"); compare("Total gross weight","totalGrossWeight"); compare("Currency","currency");
+  const lineCounts=docs.map(d=>({name:d.filename,count:Array.isArray(d.extraction?.lines)?d.extraction.lines.length:0})).filter(x=>x.count>0);
+  if(lineCounts.length>=2){const unique=[...new Set(lineCounts.map(x=>x.count))]; if(unique.length===1) checks.push({label:"Goods line count",status:"pass",detail:lineCounts.map(x=>x.name+": "+x.count).join(" · ")}); else {checks.push({label:"Goods line count",status:"conflict",detail:lineCounts.map(x=>x.name+": "+x.count).join(" · ")});conflicts.push({label:"Goods line count",values:lineCounts});}}
+  return {status:conflicts.length?"conflict":"pass",summary:conflicts.length?(conflicts.length+" cross-document conflict"+(conflicts.length===1?"":"s")+" found."):"Extracted document values reconcile with no conflicts detected.",checks,conflicts,documentCount:docs.length};
+}
+
 function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}){
  const [docUrls,setDocUrls]=useState({});
  const [tab,setTab]=useState("extraction");
@@ -582,6 +601,7 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    <div className="panel extraction-panel review-data-panel">
      <div className="tabs">
        <button className={tab==="extraction"?"selected":""} onClick={()=>setTab("extraction")}>Extracted data</button>
+       <button className={tab==="reconciliation"?"selected":""} onClick={()=>setTab("reconciliation")}>Reconciliation</button>
        <button className={tab==="json"?"selected":""} onClick={()=>setTab("json")}>Middleware JSON</button>
      </div>
      {tab==="extraction"&&<>
@@ -608,6 +628,13 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
          </table>
        </div>
      </>}
+     {tab==="reconciliation"&&(()=>{const r=reconcilePackDocuments(pack);return <div className="data-summary">
+       <div><span>Reconciliation</span><b>{r.status==="pass"?"PASS":r.status==="conflict"?"REVIEW":"NOT READY"}</b></div>
+       <div><span>Documents</span><b>{r.documentCount||0}</b></div>
+       <div><span>Result</span><b>{r.summary}</b></div>
+       {r.checks.map((check,i)=><div key={i}><span>{check.label}</span><b>{check.status.replaceAll("_"," ")} — {check.detail}</b></div>)}
+       {r.conflicts.map((x,i)=><div className="extraction-error" key={"c"+i}><b>{x.label} conflict:</b> {x.values.map(v=>v.name+" = "+(v.value??v.count)).join(" | ")}</div>)}
+     </div>})()}
      {tab==="json"&&<pre className="json">{JSON.stringify({
        customerId:"ACME-001",identifier:pack.id,customerReference:"88421",customerCustomerNo:"ACME-UK",
        deliveryTerm_SAD20:"DDP",deliveryTermPlace_SAD20:"Maldon",countryOfExport_SAD15:"HU",
