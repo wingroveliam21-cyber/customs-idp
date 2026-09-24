@@ -38,15 +38,23 @@ export default async function handler(req,res){
       },
       required:["reply","action","target"]
     };
-    const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+process.env.OPENAI_API_KEY},body:JSON.stringify({
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),30000);
+    let response;
+    try{
+      response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+process.env.OPENAI_API_KEY},signal:controller.signal,body:JSON.stringify({
       model:"gpt-5.6-luna",
       input:[{role:"user",content:[{type:"input_text",text:prompt}]}],
       text:{format:{type:"json_schema",name:"customs_agent_response",strict:true,schema}}
-    })});
+      })});
+    } finally { clearTimeout(timeout); }
     const data=await response.json();
     if(!response.ok)return res.status(response.status).json({error:data?.error?.message||"Agent request failed"});
     const text=data.output_text||data.output?.flatMap(x=>x.content||[]).find(x=>x.type==="output_text")?.text;
     if(!text)throw new Error("Agent returned no response");
     return res.status(200).json(JSON.parse(text));
-  }catch(error){return res.status(500).json({error:error.message||"Agent failed"});}
+  }catch(error){
+    const message=error?.name==="AbortError"?"The review agent timed out after 30 seconds.":(error.message||"Agent failed");
+    return res.status(500).json({error:message});
+  }
 }
