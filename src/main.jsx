@@ -571,7 +571,9 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
  const buildSummary=()=>{
    const docs=extractedDocuments;
    if(!docs.length){
-     return [{type:"agent",text:pack.processingError?"I couldn't complete the extraction. "+pack.processingError:"I'm waiting for the document extraction to finish."}];
+     if(pack.processingError) return [{type:"agent",text:"Extraction failed: "+pack.processingError}];
+     if(pack.status==="Processing") return [{type:"agent",text:"The document pack is still being processed. I'll show the extracted customs data here as soon as processing completes."}];
+     return [{type:"agent",text:"No extraction data is attached to this pack yet. Click Re-process to run the uploaded documents through the extraction engine."}];
    }
 
    const first=docs[0]?.extraction||{};
