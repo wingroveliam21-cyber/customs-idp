@@ -289,6 +289,12 @@ function App(){
   const navigate=(p)=>{setPage(p);setMobileMenuOpen(false);};
   const notify=(msg)=>{setToast(msg);setTimeout(()=>setToast(""),2500)};
   const assignPack=(packId,assignedTo)=>{const updated={...livePacks.find(p=>p.id===packId),assignedTo};setLivePacks(prev=>prev.map(p=>p.id===packId?updated:p));if(selectedPack?.id===packId)setSelectedPack(prev=>({...prev,assignedTo}));persistPack(updated);notify(`Pack ${packId} assigned to ${assignedTo}`)};
+  const updatePack=(pack)=>{
+    if(!pack)return;
+    setSelectedPack(pack);
+    setLivePacks(prev=>prev.map(p=>p.id===pack.id?pack:p));
+    persistPack(pack);
+  };
   const validatePack=()=>{
   if(!selectedPack)return;
   const lines=selectedPack.extractedData?.lines||[];
@@ -358,7 +364,7 @@ const postToLCA=()=>{
         {page==="dashboard" && <Dashboard navigate={navigate} notify={notify} livePacks={livePacks}/>}
         {page==="inbox" && <InboxPage packs={filteredPacks} query={query} setQuery={setQuery} openPack={(p)=>{setSelectedPack(p);navigate("review")}} onUpload={handleUpload} onAssign={assignPack}/>}
         
-        {page==="review" && <Review pack={selectedPack} back={()=>navigate("inbox")} notify={notify} onAssign={assignPack} validatePack={validatePack} postToLCA={postToLCA} reprocessPack={reprocessPack}/>}
+        {page==="review" && <Review pack={selectedPack} back={()=>navigate("inbox")} notify={notify} onAssign={assignPack} updatePack={updatePack} validatePack={validatePack} postToLCA={postToLCA} reprocessPack={reprocessPack}/>}
         {page==="customers" && <Customers notify={notify}/>}
         {page==="agent" && <AgentPage/>}
         {page==="settings" && <SettingsPage/>}
@@ -588,14 +594,40 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
  useEffect(()=>{try{localStorage.setItem("customs-idp-review-split",String(reviewSplit));}catch{}},[reviewSplit]);
  useEffect(()=>{if(!resizing)return;const onMove=e=>{const workspace=document.querySelector(".review-workspace-split");if(!workspace)return;const rect=workspace.getBoundingClientRect();setReviewSplit(Math.max(32,Math.min(68,((e.clientX-rect.left)/rect.width)*100)));};const onUp=()=>setResizing(false);window.addEventListener("pointermove",onMove);window.addEventListener("pointerup",onUp);document.body.classList.add("review-resizing");return()=>{window.removeEventListener("pointermove",onMove);window.removeEventListener("pointerup",onUp);document.body.classList.remove("review-resizing");};},[resizing]);
 
- const sendChat=()=>{
-   const q=chat.trim();if(!q)return;const lower=q.toLowerCase();let reply={type:"agent",text:"I can trace that back to the uploaded documents. Tell me which value you want changed and I will show the source before applying a correction."};
-   const target=extractedDocuments.find(d=>lower.includes((d.filename||"").toLowerCase()));
-   if(lower.includes("where")||lower.includes("source")||lower.includes("from where")){const doc=target||extractedDocuments[0],ev=getEvidence(doc,[]);reply=doc?{type:"agent",text:doc.filename+" is the source document I would inspect first. The extracted evidence is on page "+(ev?.page||1)+".",ref:sourceButton(doc.filename+" — page "+(ev?.page||1),doc.id,ev?.page||1)}:reply;}
-   else if(lower.includes("why")||lower.includes("discrep"))reply={type:"agent",text:"The extraction layer does not silently resolve conflicting source values. I keep the source values separate, show the discrepancy, and wait for your instruction or a customer rule before changing the customs dataset."};
-   else if(lower.includes("gross")||lower.includes("weight"))reply={type:"agent",text:"Gross and net weights are first taken from the source documents. Customer apportionment rules are applied only after extraction. I can show the source value and the calculation once the customer strategy is applied."};
-   else if(lower.includes("rule"))reply={type:"agent",text:"Customer rules are applied after source extraction. A correction can be turned into a customer-specific rule only after you confirm it."};
-   setMessages(m=>[...m,{type:"user",text:q},reply]);setChat("");
+ const applyAgentAction=action=>{
+   if(!action||action.kind!=="update_field")return null;
+   const target=action.target||{}, data=JSON.parse(JSON.stringify(pack.extractedData||{}));
+   if(target.scope==="line"&&Number.isInteger(target.lineIndex)&&data.lines?.[target.lineIndex]){
+     const line=data.lines[target.lineIndex];
+     const oldValue=line[target.field];
+     line[target.field]=target.value;
+     data.reviewOverrides=[...(data.reviewOverrides||[]),{scope:"line",lineIndex:target.lineIndex,field:target.field,oldValue,newValue:target.value,sourceDocumentId:target.sourceDocumentId||null,sourcePage:target.sourcePage||null,createdAt:new Date().toISOString()}];
+   }else if(target.scope==="primary"&&target.field){
+     const oldValue=data[target.field];
+     data[target.field]=target.value;
+     data.reviewOverrides=[...(data.reviewOverrides||[]),{scope:"primary",field:target.field,oldValue,newValue:target.value,sourceDocumentId:target.sourceDocumentId||null,sourcePage:target.sourcePage||null,createdAt:new Date().toISOString()}];
+   }else return null;
+   updatePack?.({...pack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined});
+   return "I saved that correction to the pack and cleared the previous validation result. The affected data needs to be validated again.";
+ };
+ const sendChat=async()=>{
+   const q=chat.trim();if(!q)return;
+   setMessages(m=>[...m,{type:"user",text:q},{type:"agent",text:"I'm checking the uploaded documents and their source evidence..."}]);setChat("");
+   try{
+     const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack})});
+     const result=await response.json();
+     if(!response.ok)throw new Error(result.error||"Agent request failed");
+     let reply=result.reply||"I couldn't produce an answer from the supplied pack.";
+     if(result.action==="update_field"&&result.target){
+       const saved=applyAgentAction({kind:result.action,target:result.target});
+       if(saved)reply+=" "+saved;
+     }
+     const ev=result.target?.sourceDocumentId?extractedDocuments.find(d=>d.id===result.target.sourceDocumentId):null;
+     const ref=ev&&result.target?.sourcePage?sourceButton(ev.filename+" — page "+result.target.sourcePage,ev.id,result.target.sourcePage):null;
+     setMessages(m=>[...m.filter((x,i)=>i!==m.length-1),{type:"agent",text:reply,ref}]);
+   }catch(error){
+     setMessages(m=>[...m.filter((x,i)=>i!==m.length-1),{type:"agent",text:"I couldn't reach the review agent. "+error.message}]);
+   }
  };
  const renderMessage=(m,i)=><div className={"chat-message-row "+(m.type||"agent")} key={i}><div className="chat-message-avatar">{m.type==="user"?"You":<Sparkles size={15}/>}</div><div className="chat-message-content"><div className="chat-message-text">{m.text}</div>{m.ref&&<div className="chat-source">{m.ref}</div>}</div></div>;
 
