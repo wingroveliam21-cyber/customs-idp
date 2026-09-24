@@ -558,19 +558,54 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
  const buildSummary=()=>{
    const docs=extractedDocuments;
    if(!docs.length)return [{type:"agent",text:pack.processingError?"I couldn't complete the extraction. "+pack.processingError:"I'm waiting for the document extraction to finish."}];
-   const out=[{type:"agent",text:"I've processed "+docs.length+" document"+(docs.length===1?"":"s")+" from this pack. I've kept the extracted values tied to their source documents so you can see exactly where each value came from.",persist:false}];
+   const out=[{
+     type:"agent",
+     text:"Extraction complete — I have summarised the key data below so you can check what was extracted without having to ask the agent. Every source reference is clickable and opens the relevant document/page.",
+     persist:false
+   }];
    docs.forEach(doc=>{
-     const e=doc.extraction||{},ev=evidenceFor(doc),pages=[...new Set(ev.map(x=>Number(x.page)).filter(Boolean))],details=[];
-     if(e.documentType)details.push(e.documentType.replaceAll("_"," "));
-     if(e.invoiceNumber)details.push("invoice "+e.invoiceNumber);
-     if(e.lines?.length)details.push(e.lines.length+" goods line"+(e.lines.length===1?"":"s"));
-     if(e.totalInvoiceValue!=null)details.push((e.currency||"")+" "+e.totalInvoiceValue+" invoice value");
-     if(e.totalPackages!=null)details.push(e.totalPackages+" packages");
-     if(e.totalGrossWeight!=null)details.push(e.totalGrossWeight+" kg gross");
-     if(e.totalNetWeight!=null)details.push(e.totalNetWeight+" kg net");
+     const e=doc.extraction||{},ev=evidenceFor(doc),pages=[...new Set(ev.map(x=>Number(x.page)).filter(Boolean))];
      const ref=getEvidence(doc,["invoiceNumber","totalInvoiceValue","totalGrossWeight","totalNetWeight","totalPackages"]);
-     const label=doc.filename+(ref?.page?" — page "+ref.page:(pages.length?" — pages "+pages.join(", "):""));
-     out.push({type:"document",docId:doc.id,text:details.join(" · ")||"document processed",sourceDocumentId:doc.id,sourcePage:ref?.page||pages[0]||1,sourceLabel:label,persist:false});
+     const sourcePage=ref?.page||pages[0]||1;
+     const label=doc.filename+(sourcePage?" — page "+sourcePage:"");
+     const lines=Array.isArray(e.lines)?e.lines:[];
+     const header=[];
+     if(e.documentType)header.push(e.documentType.replaceAll("_"," "));
+     if(e.invoiceNumber)header.push("Invoice "+e.invoiceNumber);
+     if(e.currency)header.push("Currency "+e.currency);
+     if(e.countryOfExport)header.push("Export "+e.countryOfExport);
+     if(e.sourceCountryOfDestination)header.push("Destination "+e.sourceCountryOfDestination);
+     const totals=[];
+     if(e.totalInvoiceValue!=null)totals.push((e.currency||"")+" "+e.totalInvoiceValue+" invoice value");
+     if(e.totalPackages!=null)totals.push(e.totalPackages+" packages");
+     if(e.totalGrossWeight!=null)totals.push(e.totalGrossWeight+" kg gross");
+     if(e.totalNetWeight!=null)totals.push(e.totalNetWeight+" kg net");
+     if(e.deliveryTerm)totals.push("Delivery term "+e.deliveryTerm);
+     let text=(header.length?header.join(" · "):"Document processed");
+     if(totals.length)text+="\\n"+totals.join(" · ");
+     if(lines.length){
+       text+="\\n\\nGoods lines:";
+       lines.forEach((line,index)=>{
+         const parts=[];
+         if(line.description)parts.push(line.description);
+         if(line.hsCode)parts.push("HS "+line.hsCode);
+         if(line.countryOfOrigin)parts.push("Origin "+line.countryOfOrigin);
+         if(line.quantity!=null)parts.push("Qty "+line.quantity);
+         if(line.netMassKg!=null)parts.push("Net "+line.netMassKg+" kg");
+         if(line.grossMassKg!=null)parts.push("Gross "+line.grossMassKg+" kg");
+         if(line.lineTotal!=null)parts.push((line.currency||e.currency||"")+" "+line.lineTotal);
+         text+="\\n"+(index+1)+". "+(parts.join(" · ")||"Line "+(index+1));
+       });
+     }
+     out.push({
+       type:"document",
+       docId:doc.id,
+       text,
+       sourceDocumentId:doc.id,
+       sourcePage,
+       sourceLabel:label,
+       persist:false
+     });
    });
    const conflicts=[];
    [["gross weight","totalGrossWeight"],["net weight","totalNetWeight"],["invoice value","totalInvoiceValue"],["currency","currency"],["export country","countryOfExport"],["destination","sourceCountryOfDestination"],["packages","totalPackages"]].forEach(([label,key])=>{
@@ -578,9 +613,11 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      if([...new Set(vals.map(x=>String(x.value)))].length>1)conflicts.push({label,vals});
    });
    if(conflicts.length){
-     out.push({type:"warning",text:"I found "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+". I have not silently chosen a value.",persist:false});
+     out.push({type:"warning",text:"Attention required — I found "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+". I have not silently chosen a value.",persist:false});
      conflicts.forEach(c=>out.push({type:"conflict",text:c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · "),persist:false}));
-   }else out.push({type:"agent",text:"The extracted documents do not currently contain conflicting values in the fields I checked. Customer-specific rules and customs calculations remain separate from source extraction.",persist:false});
+   }else{
+     out.push({type:"agent",text:"Extraction check: no conflicting totals were found across the uploaded documents for the fields checked. Customer rules and customs calculations remain separate from source extraction.",persist:false});
+   }
    return out;
  };
  useEffect(()=>{const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id]);
