@@ -570,58 +570,104 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
 
  const buildSummary=()=>{
    const docs=extractedDocuments;
-   if(!docs.length)return [{type:"agent",text:pack.processingError?"I couldn't complete the extraction. "+pack.processingError:"I'm waiting for the document extraction to finish."}];
-   const out=[{type:"agent",text:"Extraction complete — I've summarised the extracted data below so you can check it immediately.",persist:false}];
-   docs.forEach(doc=>{
-     const e=doc.extraction||{},ev=evidenceFor(doc),pages=[...new Set(ev.map(x=>Number(x.page)).filter(Boolean))];
+   if(!docs.length){
+     return [{type:"agent",text:pack.processingError?"I couldn't complete the extraction. "+pack.processingError:"I'm waiting for the document extraction to finish."}];
+   }
+
+   const first=docs[0]?.extraction||{};
+   const value=(v)=>v===undefined||v===null||v===""?"not stated":String(v);
+   const sourceFor=doc=>{
      const ref=getEvidence(doc,["invoiceNumber","totalInvoiceValue","totalGrossWeight","totalNetWeight","totalPackages"]);
-     const sourcePage=ref?.page||pages[0]||1;
+     const ev=evidenceFor(doc);
+     return ref?.page||ev.find(x=>x.page)?.page||1;
+   };
+
+   const out=[{
+     type:"agent",
+     text:"Extraction complete. I've combined the uploaded documents into one customs-entry view and checked the key fields across the pack.",
+     persist:false
+   }];
+
+   const customsLines=[];
+   docs.forEach(doc=>{
+     const e=doc.extraction||{};
      const lines=Array.isArray(e.lines)?e.lines:[];
-     out.push({
-       type:"documentSummary",
-       docId:doc.id,
-       text:"",
-       sourceDocumentId:doc.id,
-       sourcePage,
-       sourceLabel:doc.filename+" — page "+sourcePage,
-       persist:false,
-       summary:{
-         filename:doc.filename,
-         documentType:e.documentType?.replaceAll("_"," ")||"Document",
-         invoiceNumber:e.invoiceNumber||null,
-         currency:e.currency||null,
-         exportCountry:e.countryOfExport||null,
-         destination:e.sourceCountryOfDestination||null,
-         invoiceValue:e.totalInvoiceValue??null,
-         packages:e.totalPackages??null,
-         gross:e.totalGrossWeight??null,
-         net:e.totalNetWeight??null,
-         deliveryTerm:e.deliveryTerm||null,
-         lines:lines.map((line,index)=>({
-           no:index+1,
-           description:line.description||"Line "+(index+1),
-           hs:line.hsCode||line.customerHSCode||null,
-           origin:line.countryOfOrigin||null,
-           quantity:line.quantity??null,
-           net:line.netMassKg??null,
-           gross:line.grossMassKg??null,
-           value:line.lineTotal??line.itemPrice??null
-         }))
-       }
+     lines.forEach((line,index)=>{
+       customsLines.push(
+         "Line "+(customsLines.length+1)+": "+value(line.description||("Line "+(index+1)))+
+         " | HS "+value(line.hsCode||line.customerHSCode)+
+         " | Origin "+value(line.countryOfOrigin)+
+         " | Qty "+value(line.quantity)+
+         " | Net "+value(line.netMassKg)+" kg"+
+         " | Gross "+value(line.grossMassKg)+" kg"+
+         " | Value "+value(line.lineTotal??line.itemPrice)
+       );
      });
    });
+
+   const combined=[
+     "Customs entry",
+     "Invoice: "+value(first.invoiceNumber),
+     "Exporter: "+value(first.exporterName||first.exporter||first.exporterCompany),
+     "Consignee: "+value(first.consigneeName||first.importerName||first.consignee),
+     "Currency: "+value(first.currency),
+     "Invoice value: "+value(first.totalInvoiceValue),
+     "Export: "+value(first.countryOfExport),
+     "Destination: "+value(first.sourceCountryOfDestination||first.countryOfDestination),
+     "Packages: "+value(first.totalPackages),
+     "Gross weight: "+value(first.totalGrossWeight)+" kg",
+     "Net weight: "+value(first.totalNetWeight)+" kg",
+     "Delivery term: "+value(first.deliveryTerm),
+     customsLines.length?"Goods lines:\n"+customsLines.join("\n"):"Goods lines: none extracted"
+   ].join("\n");
+
+   out.push({
+     type:"agent",
+     text:combined,
+     sourceDocumentId:docs[0].id,
+     sourcePage:sourceFor(docs[0]),
+     sourceLabel:docs[0].filename+" — page "+sourceFor(docs[0]),
+     persist:false
+   });
+
    const conflicts=[];
    [["gross weight","totalGrossWeight"],["net weight","totalNetWeight"],["invoice value","totalInvoiceValue"],["currency","currency"],["export country","countryOfExport"],["destination","sourceCountryOfDestination"],["packages","totalPackages"]].forEach(([label,key])=>{
      const vals=docs.map(d=>({d,value:d.extraction?.[key]})).filter(x=>x.value!==undefined&&x.value!==null&&x.value!=="");
      if([...new Set(vals.map(x=>String(x.value)))].length>1)conflicts.push({label,vals});
    });
+
    if(conflicts.length){
-     out.push({type:"warning",text:"Attention required — "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+" found. I have not silently chosen a value.",persist:false});
-     conflicts.forEach(c=>out.push({type:"conflict",text:c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · "),persist:false}));
-   }else out.push({type:"agent",text:"Extraction check: no conflicting totals were found across the uploaded documents for the fields checked.",persist:false});
+     out.push({
+       type:"agent",
+       text:"Cross-document check — attention required. I found "+conflicts.length+" discrepancy"+(conflicts.length===1?"":"ies")+" and have not silently chosen a value.\n"+
+         conflicts.map(c=>c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · ")).join("\n"),
+       persist:false
+     });
+   }else{
+     out.push({
+       type:"agent",
+       text:"Cross-document check: the key totals checked across the uploaded documents agree. I have not inferred or corrected any source value.",
+       persist:false
+     });
+   }
+
+   docs.slice(1).forEach(doc=>{
+     out.push({
+       type:"agent",
+       text:"Source checked: "+doc.filename+". Its extracted values were included in the combined customs-entry view above.",
+       sourceDocumentId:doc.id,
+       sourcePage:sourceFor(doc),
+       sourceLabel:doc.filename+" — page "+sourceFor(doc),
+       persist:false
+     });
+   });
+
    return out;
  };
- useEffect(()=>{const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id]);
+ useEffect(()=>{
+   const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];
+   setMessages([...buildSummary(),...saved]);
+ },[pack.id,extractedDocuments]);
  useEffect(()=>{if(!documentRows.length){setSelectedDocumentId(null);return;}setSelectedDocumentId(current=>documentRows.some(d=>(d.id||d.name)===current)?current:(documentRows[0].id||documentRows[0].name));},[pack.id,pack.uploadedFiles?.length]);
 
  const selectedDocument=documentRows.find(d=>(d.id||d.name)===selectedDocumentId)||documentRows[0];
