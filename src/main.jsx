@@ -558,53 +558,43 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
  const buildSummary=()=>{
    const docs=extractedDocuments;
    if(!docs.length)return [{type:"agent",text:pack.processingError?"I couldn't complete the extraction. "+pack.processingError:"I'm waiting for the document extraction to finish."}];
-   const out=[{
-     type:"agent",
-     text:"Extraction complete — I have summarised the key data below so you can check what was extracted without having to ask the agent. Every source reference is clickable and opens the relevant document/page.",
-     persist:false
-   }];
+   const out=[{type:"agent",text:"Extraction complete — I've summarised the extracted data below so you can check it immediately.",persist:false}];
    docs.forEach(doc=>{
      const e=doc.extraction||{},ev=evidenceFor(doc),pages=[...new Set(ev.map(x=>Number(x.page)).filter(Boolean))];
      const ref=getEvidence(doc,["invoiceNumber","totalInvoiceValue","totalGrossWeight","totalNetWeight","totalPackages"]);
      const sourcePage=ref?.page||pages[0]||1;
-     const label=doc.filename+(sourcePage?" — page "+sourcePage:"");
      const lines=Array.isArray(e.lines)?e.lines:[];
-     const header=[];
-     if(e.documentType)header.push(e.documentType.replaceAll("_"," "));
-     if(e.invoiceNumber)header.push("Invoice "+e.invoiceNumber);
-     if(e.currency)header.push("Currency "+e.currency);
-     if(e.countryOfExport)header.push("Export "+e.countryOfExport);
-     if(e.sourceCountryOfDestination)header.push("Destination "+e.sourceCountryOfDestination);
-     const totals=[];
-     if(e.totalInvoiceValue!=null)totals.push((e.currency||"")+" "+e.totalInvoiceValue+" invoice value");
-     if(e.totalPackages!=null)totals.push(e.totalPackages+" packages");
-     if(e.totalGrossWeight!=null)totals.push(e.totalGrossWeight+" kg gross");
-     if(e.totalNetWeight!=null)totals.push(e.totalNetWeight+" kg net");
-     if(e.deliveryTerm)totals.push("Delivery term "+e.deliveryTerm);
-     let text=(header.length?header.join(" · "):"Document processed");
-     if(totals.length)text+="\\n"+totals.join(" · ");
-     if(lines.length){
-       text+="\\n\\nGoods lines:";
-       lines.forEach((line,index)=>{
-         const parts=[];
-         if(line.description)parts.push(line.description);
-         if(line.hsCode)parts.push("HS "+line.hsCode);
-         if(line.countryOfOrigin)parts.push("Origin "+line.countryOfOrigin);
-         if(line.quantity!=null)parts.push("Qty "+line.quantity);
-         if(line.netMassKg!=null)parts.push("Net "+line.netMassKg+" kg");
-         if(line.grossMassKg!=null)parts.push("Gross "+line.grossMassKg+" kg");
-         if(line.lineTotal!=null)parts.push((line.currency||e.currency||"")+" "+line.lineTotal);
-         text+="\\n"+(index+1)+". "+(parts.join(" · ")||"Line "+(index+1));
-       });
-     }
      out.push({
-       type:"document",
+       type:"documentSummary",
        docId:doc.id,
-       text,
+       text:"",
        sourceDocumentId:doc.id,
        sourcePage,
-       sourceLabel:label,
-       persist:false
+       sourceLabel:doc.filename+" — page "+sourcePage,
+       persist:false,
+       summary:{
+         filename:doc.filename,
+         documentType:e.documentType?.replaceAll("_"," ")||"Document",
+         invoiceNumber:e.invoiceNumber||null,
+         currency:e.currency||null,
+         exportCountry:e.countryOfExport||null,
+         destination:e.sourceCountryOfDestination||null,
+         invoiceValue:e.totalInvoiceValue??null,
+         packages:e.totalPackages??null,
+         gross:e.totalGrossWeight??null,
+         net:e.totalNetWeight??null,
+         deliveryTerm:e.deliveryTerm||null,
+         lines:lines.map((line,index)=>({
+           no:index+1,
+           description:line.description||"Line "+(index+1),
+           hs:line.hsCode||line.customerHSCode||null,
+           origin:line.countryOfOrigin||null,
+           quantity:line.quantity??null,
+           net:line.netMassKg??null,
+           gross:line.grossMassKg??null,
+           value:line.lineTotal??line.itemPrice??null
+         }))
+       }
      });
    });
    const conflicts=[];
@@ -613,11 +603,9 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      if([...new Set(vals.map(x=>String(x.value)))].length>1)conflicts.push({label,vals});
    });
    if(conflicts.length){
-     out.push({type:"warning",text:"Attention required — I found "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+". I have not silently chosen a value.",persist:false});
+     out.push({type:"warning",text:"Attention required — "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+" found. I have not silently chosen a value.",persist:false});
      conflicts.forEach(c=>out.push({type:"conflict",text:c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · "),persist:false}));
-   }else{
-     out.push({type:"agent",text:"Extraction check: no conflicting totals were found across the uploaded documents for the fields checked. Customer rules and customs calculations remain separate from source extraction.",persist:false});
-   }
+   }else out.push({type:"agent",text:"Extraction check: no conflicting totals were found across the uploaded documents for the fields checked.",persist:false});
    return out;
  };
  useEffect(()=>{const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id]);
@@ -695,7 +683,31 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      updatePack?.(finalPack);
    }finally{setIsSending(false);}
  };
- const renderMessage=(m,i)=>{const source=m.sourceDocumentId&&m.sourcePage?sourceButton(m.sourceLabel||("Source — page "+m.sourcePage),m.sourceDocumentId,m.sourcePage):null;return <div className={"chat-message-row "+(m.type||"agent")} key={i}><div className="chat-message-avatar">{m.type==="user"?"You":<Sparkles size={15}/>}</div><div className="chat-message-content"><div className="chat-message-text">{m.text}</div>{source&&<div className="chat-source">{source}</div>}</div></div>;};
+ const renderMessage=(m,i)=>{
+   const source=m.sourceDocumentId&&m.sourcePage?sourceButton(m.sourceLabel||("Source — page "+m.sourcePage),m.sourceDocumentId,m.sourcePage):null;
+   if(m.type==="documentSummary"&&m.summary){
+     const s=m.summary;
+     return <div className="chat-message-row agent" key={i}>
+       <div className="chat-message-avatar"><Sparkles size={15}/></div>
+       <div className="chat-message-content">
+         <div className="extraction-summary-card">
+           <div className="extraction-summary-head"><div><span className="summary-kicker">{s.documentType}</span><h3>{s.filename}</h3></div><span className="summary-status">Extracted</span></div>
+           <div className="summary-meta">{s.invoiceNumber&&<span>Invoice <b>{s.invoiceNumber}</b></span>}{s.currency&&<span>Currency <b>{s.currency}</b></span>}{s.exportCountry&&<span>Export <b>{s.exportCountry}</b></span>}{s.destination&&<span>Destination <b>{s.destination}</b></span>}</div>
+           <div className="summary-total-grid">
+             {s.invoiceValue!=null&&<div><small>Invoice value</small><b>{s.currency||""} {s.invoiceValue}</b></div>}
+             {s.packages!=null&&<div><small>Packages</small><b>{s.packages}</b></div>}
+             {s.gross!=null&&<div><small>Gross weight</small><b>{s.gross} kg</b></div>}
+             {s.net!=null&&<div><small>Net weight</small><b>{s.net} kg</b></div>}
+             {s.deliveryTerm&&<div><small>Delivery term</small><b>{s.deliveryTerm}</b></div>}
+           </div>
+           {s.lines.length>0&&<div className="summary-lines"><div className="summary-section-title">Goods lines <span>{s.lines.length}</span></div><div className="summary-line-list">{s.lines.map(line=><div className="summary-line" key={line.no}><div className="summary-line-no">{line.no}</div><div className="summary-line-main"><b>{line.description}</b><div>{line.hs&&<span>HS {line.hs}</span>}{line.origin&&<span>Origin {line.origin}</span>}{line.quantity!=null&&<span>Qty {line.quantity}</span>}{line.net!=null&&<span>Net {line.net} kg</span>}{line.gross!=null&&<span>Gross {line.gross} kg</span>}{line.value!=null&&<span>{s.currency||""} {line.value}</span>}</div></div></div>)}</div></div>}
+           {source&&<div className="summary-source">{source}</div>}
+         </div>
+       </div>
+     </div>;
+   }
+   return <div className={"chat-message-row "+(m.type||"agent")} key={i}><div className="chat-message-avatar">{m.type==="user"?"You":<Sparkles size={15}/>}</div><div className="chat-message-content"><div className="chat-message-text">{m.text}</div>{source&&<div className="chat-source">{source}</div>}</div></div>;
+ };
 
  return <section>
    <button className="back" onClick={back}>← Back to inbox</button>
