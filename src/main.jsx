@@ -558,7 +558,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
  const buildSummary=()=>{
    const docs=extractedDocuments;
    if(!docs.length)return [{type:"agent",text:pack.processingError?"I couldn't complete the extraction. "+pack.processingError:"I'm waiting for the document extraction to finish."}];
-   const out=[{type:"agent",text:"I've processed "+docs.length+" document"+(docs.length===1?"":"s")+" from this pack. I've kept the extracted values tied to their source documents so you can see exactly where each value came from."}];
+   const out=[{type:"agent",text:"I've processed "+docs.length+" document"+(docs.length===1?"":"s")+" from this pack. I've kept the extracted values tied to their source documents so you can see exactly where each value came from.",persist:false}];
    docs.forEach(doc=>{
      const e=doc.extraction||{},ev=evidenceFor(doc),pages=[...new Set(ev.map(x=>Number(x.page)).filter(Boolean))],details=[];
      if(e.documentType)details.push(e.documentType.replaceAll("_"," "));
@@ -578,9 +578,9 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      if([...new Set(vals.map(x=>String(x.value)))].length>1)conflicts.push({label,vals});
    });
    if(conflicts.length){
-     out.push({type:"warning",text:"I found "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+". I have not silently chosen a value."});
-     conflicts.forEach(c=>out.push({type:"conflict",text:c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · ")}));
-   }else out.push({type:"agent",text:"The extracted documents do not currently contain conflicting values in the fields I checked. Customer-specific rules and customs calculations remain separate from source extraction."});
+     out.push({type:"warning",text:"I found "+conflicts.length+" cross-document discrepanc"+(conflicts.length===1?"y":"ies")+". I have not silently chosen a value.",persist:false});
+     conflicts.forEach(c=>out.push({type:"conflict",text:c.label+": "+c.vals.map(v=>v.d.filename+" = "+v.value).join(" · "),persist:false}));
+   }else out.push({type:"agent",text:"The extracted documents do not currently contain conflicting values in the fields I checked. Customer-specific rules and customs calculations remain separate from source extraction.",persist:false});
    return out;
  };
  useEffect(()=>{const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id]);
@@ -648,8 +648,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      const data=JSON.parse(JSON.stringify(savedPack.extractedData||{}));
      data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...savedPack,extractedData:data};
-     setSelectedPack?.(finalPack);setLivePacks?.(prev=>prev.map(p=>p.id===finalPack.id?finalPack:p));
-     const saved=await persistPack?.(finalPack);
+     updatePack?.(finalPack);
      if(!saved)notify?.("Chat response shown, but chat history could not be saved.");
    }catch(error){
      const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
@@ -657,8 +656,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      setMessages(completed);
      const data=JSON.parse(JSON.stringify(pack.extractedData||{}));data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...pack,extractedData:data};
-     setSelectedPack?.(finalPack);setLivePacks?.(prev=>prev.map(p=>p.id===finalPack.id?finalPack:p));
-     await persistPack?.(finalPack);
+     updatePack?.(finalPack);
    }finally{setIsSending(false);}
  };
  const renderMessage=(m,i)=>{const source=m.sourceDocumentId&&m.sourcePage?sourceButton(m.sourceLabel||("Source — page "+m.sourcePage),m.sourceDocumentId,m.sourcePage):null;return <div className={"chat-message-row "+(m.type||"agent")} key={i}><div className="chat-message-avatar">{m.type==="user"?"You":<Sparkles size={15}/>}</div><div className="chat-message-content"><div className="chat-message-text">{m.text}</div>{source&&<div className="chat-source">{source}</div>}</div></div>;};
