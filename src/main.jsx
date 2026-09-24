@@ -649,7 +649,6 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...savedPack,extractedData:data};
      updatePack?.(finalPack);
-     if(!saved)notify?.("Chat response shown, but chat history could not be saved.");
    }catch(error){
      const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
      const completed=[...conversationBefore,failed];
