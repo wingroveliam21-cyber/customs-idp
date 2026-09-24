@@ -1142,3 +1142,43 @@ body.review-resizing .review-horizontal-resizer span{
 .message,.chat-input,.chat-input input,.chat-input button,.extraction-summary-card,.summary-source{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
 .message{font-size:10px;line-height:1.6;}
 .chat-input input{font-size:10px;}
+
+
+/* Refined agent review chat */
+.chat-review-panel{overflow:hidden;background:#fff;border:1px solid #e3e8ef;border-radius:12px;box-shadow:0 4px 18px rgba(15,23,42,.04)}
+.chat-review-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e9edf2;background:#fff}
+.chat-review-intro{margin:0;padding:11px 16px;background:#f8fafc;border-bottom:1px solid #edf1f5;color:#718096;font:400 10px/1.55 Inter,ui-sans-serif,system-ui,sans-serif}
+.chat-review-history{display:flex;flex-direction:column;gap:16px;padding:18px 16px;background:#fbfcfe;min-height:420px;max-height:calc(100vh - 360px);overflow-y:auto}
+.chat-message-row{display:flex;align-items:flex-start;gap:9px;max-width:92%;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.chat-message-row.user{margin-left:auto;flex-direction:row-reverse}
+.chat-message-avatar{width:28px;height:28px;flex:0 0 28px;border-radius:8px;display:grid;place-items:center;font:600 8px/1 Inter,ui-sans-serif,system-ui,sans-serif;background:#eef2f7;color:#64748b}
+.chat-message-row.agent .chat-message-avatar{background:#eaf1ff;color:#2563eb}
+.chat-message-row.user .chat-message-avatar{background:#2563eb;color:#fff}
+.chat-message-content{min-width:0;max-width:calc(100% - 37px)}
+.chat-message-text{padding:10px 12px;border:1px solid #e3e8ef;border-radius:4px 11px 11px 11px;background:#fff;color:#334155;font:400 11px/1.65 Inter,ui-sans-serif,system-ui,sans-serif;white-space:pre-wrap;word-break:break-word;box-shadow:0 1px 2px rgba(15,23,42,.025)}
+.chat-message-row.user .chat-message-text{border-color:#2563eb;background:#2563eb;color:#fff;border-radius:11px 4px 11px 11px;box-shadow:none}
+.chat-source{margin:6px 2px 0;font:500 9px/1.4 Inter,ui-sans-serif,system-ui,sans-serif}
+.chat-source button,.summary-source button{border:0;background:transparent;padding:0;color:#2563eb;font:600 9px/1.4 Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer;text-decoration:none}
+.chat-source button:hover,.summary-source button:hover{text-decoration:underline}
+.chat-review-input{margin:0;padding:9px;border:0;border-top:1px solid #e5eaf0;border-radius:0;background:#fff}
+.chat-review-input input{height:36px;padding:0 10px;border:1px solid #dfe5ee;border-radius:8px;background:#f8fafc;color:#263147;font:400 10px/1.4 Inter,ui-sans-serif,system-ui,sans-serif}
+.chat-review-input input:focus{background:#fff;border-color:#9dbcf0;box-shadow:0 0 0 3px #eff6ff}
+.chat-review-input button{width:36px;height:36px;border-radius:8px}
+.chat-review-history .extraction-summary-card{margin:0;max-width:100%;border:1px solid #dfe5ee;border-radius:11px;padding:14px;box-shadow:none;background:#fff}
+.chat-message-row.agent:has(.extraction-summary-card){max-width:100%;width:100%;gap:9px}
+.chat-message-row.agent:has(.extraction-summary-card) .chat-message-content{width:100%}
+.chat-review-history .summary-meta span,.chat-review-history .summary-total-grid>div,.chat-review-history .summary-line{background:#f8fafc}
+.chat-review-history .summary-kicker{font-size:9px;color:#7c8799}
+.chat-review-history .extraction-summary-head h3{font-size:12px}
+.chat-review-history .summary-total-grid{grid-template-columns:repeat(auto-fit,minmax(95px,1fr))}
+.chat-review-history .summary-line-main>b{font-size:10px}
+.chat-review-history .summary-line-main span{font-size:9px}
+@media(max-width:650px){
+ .chat-review-history{padding:14px 11px;gap:13px;max-height:none;min-height:360px}
+ .chat-message-row{max-width:96%}
+ .chat-message-content{max-width:calc(100% - 34px)}
+ .chat-message-avatar{width:25px;height:25px;flex-basis:25px}
+ .chat-message-text{font-size:10px}
+ .chat-review-intro{padding:10px 12px;font-size:9px}
+ .chat-review-head{padding:12px}
+}
