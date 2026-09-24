@@ -583,7 +583,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
    }else out.push({type:"agent",text:"The extracted documents do not currently contain conflicting values in the fields I checked. Customer-specific rules and customs calculations remain separate from source extraction."});
    return out;
  };
- useEffect(()=>{if(isSending)return;const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id,pack.extractedData,pack.processingError,isSending]);
+ useEffect(()=>{const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id]);
  useEffect(()=>{if(!documentRows.length){setSelectedDocumentId(null);return;}setSelectedDocumentId(current=>documentRows.some(d=>(d.id||d.name)===current)?current:(documentRows[0].id||documentRows[0].name));},[pack.id,pack.uploadedFiles?.length]);
 
  const selectedDocument=documentRows.find(d=>(d.id||d.name)===selectedDocumentId)||documentRows[0];
