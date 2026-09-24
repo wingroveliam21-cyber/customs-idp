@@ -537,6 +537,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
  const [docUrls,setDocUrls]=useState({});
  const [chat,setChat]=useState("");
  const [messages,setMessages]=useState([]);
+ const [isSending,setIsSending]=useState(false);
  const [selectedDocumentId,setSelectedDocumentId]=useState(null);
  const [previewPage,setPreviewPage]=useState(1);
  const [showPreview,setShowPreview]=useState(()=>{try{return localStorage.getItem("customs-idp-review-preview")!=="off";}catch{return true;}});
@@ -582,7 +583,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
    }else out.push({type:"agent",text:"The extracted documents do not currently contain conflicting values in the fields I checked. Customer-specific rules and customs calculations remain separate from source extraction."});
    return out;
  };
- useEffect(()=>{const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id,pack.extractedData,pack.processingError]);
+ useEffect(()=>{if(isSending)return;const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];setMessages([...buildSummary(),...saved]);},[pack.id,pack.extractedData,pack.processingError,isSending]);
  useEffect(()=>{if(!documentRows.length){setSelectedDocumentId(null);return;}setSelectedDocumentId(current=>documentRows.some(d=>(d.id||d.name)===current)?current:(documentRows[0].id||documentRows[0].name));},[pack.id,pack.uploadedFiles?.length]);
 
  const selectedDocument=documentRows.find(d=>(d.id||d.name)===selectedDocumentId)||documentRows[0];
@@ -615,38 +616,50 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
    const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
    data.agentMessages=conversation.filter(m=>m.persist!==false).map(serialiseMessage);
    const nextPack={...pack,extractedData:data};
-   setMessages(current=>current);
-   setLivePacks?.(prev=>prev.map(p=>p.id===nextPack.id?nextPack:p));
-   setSelectedPack?.(nextPack);
    const saved=await persistPack?.(nextPack);
    if(!saved) notify?.("Chat history could not be saved to the database");
    return saved;
  };
  const sendChat=async()=>{
-   const q=chat.trim();if(!q)return;
+   const q=chat.trim();if(!q||isSending)return;
    const userMessage={type:"user",text:q,persist:true};
    const thinking={type:"agent",text:"I'm checking the uploaded documents and their source evidence...",persist:false};
-   const before=[...messages,userMessage,thinking];
-   setMessages(before);setChat("");
-   void persistConversation([...messages,userMessage]);
+   const conversationBefore=[...messages,userMessage];
+   setIsSending(true);setMessages([...conversationBefore,thinking]);setChat("");
    try{
      const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack:{...pack,extractedData:{...(pack.extractedData||{}),agentMessages:undefined}}})});
      const result=await response.json();
      if(!response.ok)throw new Error(result.error||"Agent request failed");
      let reply=result.reply||"I couldn't produce an answer from the supplied pack.";
+     let savedPack=pack;
      if(result.action==="update_field"&&result.target){
-       const saved=applyAgentAction({kind:result.action,target:result.target});
-       if(saved)reply+=" "+saved;
+       const target=result.target;
+       const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
+       if(target.scope==="line"&&Number.isInteger(target.lineIndex)&&data.lines?.[target.lineIndex]) data.lines[target.lineIndex][target.field]=target.value;
+       else if(target.scope==="primary"&&target.field) data[target.field]=target.value;
+       else throw new Error("The agent returned an invalid correction target.");
+       data.reviewOverrides=[...(data.reviewOverrides||[]),{scope:target.scope,field:target.field,lineIndex:target.lineIndex??null,oldValue:target.scope==="line"?pack.extractedData?.lines?.[target.lineIndex]?.[target.field]:pack.extractedData?.[target.field],newValue:target.value,sourceDocumentId:target.sourceDocumentId||null,sourcePage:target.sourcePage||null,createdAt:new Date().toISOString()}];
+       savedPack={...pack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       reply+=" I saved that correction to the pack and cleared the previous validation result. The affected data needs to be validated again.";
      }
      const agentMessage={type:"agent",text:reply,sourceDocumentId:result.target?.sourceDocumentId||null,sourcePage:result.target?.sourcePage||null,persist:true};
-     const completed=[...messages,userMessage,agentMessage];
+     const completed=[...conversationBefore,agentMessage];
      setMessages(completed);
-     void persistConversation(completed);
+     const data=JSON.parse(JSON.stringify(savedPack.extractedData||{}));
+     data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
+     const finalPack={...savedPack,extractedData:data};
+     setSelectedPack?.(finalPack);setLivePacks?.(prev=>prev.map(p=>p.id===finalPack.id?finalPack:p));
+     const saved=await persistPack?.(finalPack);
+     if(!saved)notify?.("Chat response shown, but chat history could not be saved.");
    }catch(error){
-     const completed=[...messages,userMessage,{type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true}];
+     const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
+     const completed=[...conversationBefore,failed];
      setMessages(completed);
-     persistConversation(completed);
-   }
+     const data=JSON.parse(JSON.stringify(pack.extractedData||{}));data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
+     const finalPack={...pack,extractedData:data};
+     setSelectedPack?.(finalPack);setLivePacks?.(prev=>prev.map(p=>p.id===finalPack.id?finalPack:p));
+     await persistPack?.(finalPack);
+   }finally{setIsSending(false);}
  };
  const renderMessage=(m,i)=>{const source=m.sourceDocumentId&&m.sourcePage?sourceButton(m.sourceLabel||("Source — page "+m.sourcePage),m.sourceDocumentId,m.sourcePage):null;return <div className={"chat-message-row "+(m.type||"agent")} key={i}><div className="chat-message-avatar">{m.type==="user"?"You":<Sparkles size={15}/>}</div><div className="chat-message-content"><div className="chat-message-text">{m.text}</div>{source&&<div className="chat-source">{source}</div>}</div></div>;};
 
