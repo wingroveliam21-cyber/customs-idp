@@ -611,10 +611,16 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    return "I saved that correction to the pack and cleared the previous validation result. The affected data needs to be validated again.";
  };
  const serialiseMessage=m=>({type:m.type||"agent",text:m.text||"",sourceDocumentId:m.sourceDocumentId||null,sourcePage:Number.isInteger(m.sourcePage)?m.sourcePage:null,sourceLabel:m.sourceLabel||null});
- const persistConversation=conversation=>{
+ const persistConversation=async conversation=>{
    const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
    data.agentMessages=conversation.filter(m=>m.persist!==false).map(serialiseMessage);
-   updatePack?.({...pack,extractedData:data});
+   const nextPack={...pack,extractedData:data};
+   setMessages(current=>current);
+   setLivePacks?.(prev=>prev.map(p=>p.id===nextPack.id?nextPack:p));
+   setSelectedPack?.(nextPack);
+   const saved=await persistPack?.(nextPack);
+   if(!saved) notify?.("Chat history could not be saved to the database");
+   return saved;
  };
  const sendChat=async()=>{
    const q=chat.trim();if(!q)return;
@@ -622,7 +628,7 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
    const thinking={type:"agent",text:"I'm checking the uploaded documents and their source evidence...",persist:false};
    const before=[...messages,userMessage,thinking];
    setMessages(before);setChat("");
-   persistConversation([...messages,userMessage]);
+   void persistConversation([...messages,userMessage]);
    try{
      const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack:{...pack,extractedData:{...(pack.extractedData||{}),agentMessages:undefined}}})});
      const result=await response.json();
@@ -635,7 +641,7 @@ function Review({pack,back,notify,onAssign,validatePack,postToLCA,reprocessPack}
      const agentMessage={type:"agent",text:reply,sourceDocumentId:result.target?.sourceDocumentId||null,sourcePage:result.target?.sourcePage||null,persist:true};
      const completed=[...messages,userMessage,agentMessage];
      setMessages(completed);
-     persistConversation(completed);
+     void persistConversation(completed);
    }catch(error){
      const completed=[...messages,userMessage,{type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true}];
      setMessages(completed);
