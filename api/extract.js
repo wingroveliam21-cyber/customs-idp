@@ -27,7 +27,7 @@ Your job is accurate source extraction, NOT guessing and NOT customer-rule appli
 3. Extract only values supported by the document. Never invent, infer or silently correct a missing value.
 4. Preserve the source representation where useful, but return numeric customs values as numbers.
 5. Capture all line items. Do not merge separate lines.
-6. Capture line-level net and gross weight separately when the document provides them.
+6. Capture line-level net and gross weight separately when the document provides them. Map the document's NET column to netMassKg and the document's GROSS column to grossMassKg. Never swap these fields. Map the line's extended/total amount to totalValue and the unit price to unitValue. Map the line's country-of-origin/country code to sourceCountryCode.
 7. If a value is unclear, return the best supported reading and lower its confidence.
 8. If a field is absent, return null.
 9. Check arithmetic where possible: line totals versus invoice total, quantities versus packages, and line weights versus document totals.
