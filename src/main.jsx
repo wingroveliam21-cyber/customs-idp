@@ -317,6 +317,14 @@ function App(){
       message:"Source data extracted."
     });
   });
+  const weightDecision=data.weightSourceDecision;
+  if(weightDecision){
+    checks.push({
+      check:"Weight source comparison",
+      status:"warning",
+      detail:"A cross-document weight issue remains recorded. "+(weightDecision.source==="packing_list"?"Packing List":"Commercial Invoice")+" was selected for "+(Number(weightDecision.matchedLines)||0)+" matched line(s); review the document source difference before declaration."
+    });
+  }
   const hasFail=checks.some(x=>x.status==="fail");
   const validated={
     ...selectedPack,
@@ -601,21 +609,46 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
    }
 
    const supportingDocs=docs.filter(d=>d!==invoiceDoc);
-   const packingDoc=supportingDocs.find(d=>/packing/i.test(d.filename||""))||supportingDocs[0];
+   const packingDoc=supportingDocs.find(d=>d.extraction?.documentType==="packing_list")
+     ||supportingDocs.find(d=>/packing/i.test(d.filename||""))
+     ||supportingDocs[0];
    const sourceFor=doc=>{
      const ev=evidenceFor(doc);
      return ev.find(x=>x.page)?.page||1;
    };
-   const lineKey=line=>String(line?.hsCode||"")+"|"+String(line?.description||"").trim().toLowerCase();
    const lines=Array.isArray(invoice.lines)?invoice.lines:[];
-   const findSourceLine=(doc,invLine)=>{
-     const sourceLines=Array.isArray(doc?.extraction?.lines)?doc.extraction.lines:[];
-     return sourceLines.find(l=>lineKey(l)===lineKey(invLine))||sourceLines.find(l=>String(l.description||"").trim().toLowerCase()===String(invLine.description||"").trim().toLowerCase());
-   };
+   const sourceLines=Array.isArray(packingDoc?.extraction?.lines)?packingDoc.extraction.lines:[];
+   const normaliseMatchValue=v=>String(v||"").trim().toLowerCase().replace(/\\s+/g," ");
+   const usedSourceLines=new Set();
+   const sourceLineMatches=lines.map(invLine=>{
+     const hs=normaliseMatchValue(invLine?.hsCode);
+     const description=normaliseMatchValue(invLine?.description);
+     const available=sourceLines.map((line,index)=>({line,index})).filter(x=>!usedSourceLines.has(x.index));
+     const exact=available.filter(x=>hs&&description&&normaliseMatchValue(x.line?.hsCode)===hs&&normaliseMatchValue(x.line?.description)===description);
+     const byHs=available.filter(x=>hs&&normaliseMatchValue(x.line?.hsCode)===hs);
+     const byDescription=available.filter(x=>description&&normaliseMatchValue(x.line?.description)===description);
+     const candidates=exact.length?exact:byHs.length===1?byHs:byDescription.length===1?byDescription:byHs.length?byHs:byDescription;
+     if(candidates.length!==1)return {line:null,ambiguous:candidates.length>1,candidates:candidates.map(x=>x.line),invoice:invLine};
+     usedSourceLines.add(candidates[0].index);
+     return {line:candidates[0].line,ambiguous:false,invoice:invLine};
+   });
 
    const selectedWeightSource=pack.extractedData?.weightSourceDecision?.source||null;
+   const weightMatches=sourceLineMatches.filter(match=>match.line);
+   const weightIssues=weightMatches.filter(({invoice:invLine,line:plLine})=>{
+     const packingHasWeight=hasValue(plLine.netMassKg)||hasValue(plLine.grossMassKg);
+     const invoiceMissingWeight=(!hasValue(invLine.netMassKg)&&hasValue(plLine.netMassKg))||(!hasValue(invLine.grossMassKg)&&hasValue(plLine.grossMassKg));
+     const weightsDiffer=(hasValue(invLine.netMassKg)&&hasValue(plLine.netMassKg)&&String(invLine.netMassKg)!==String(plLine.netMassKg))
+       ||(hasValue(invLine.grossMassKg)&&hasValue(plLine.grossMassKg)&&String(invLine.grossMassKg)!==String(plLine.grossMassKg));
+     return packingHasWeight&&(invoiceMissingWeight||weightsDiffer);
+   }).map(match=>({...match,doc:packingDoc}));
+   const ambiguousWeightIssues=sourceLineMatches.filter(match=>match.ambiguous&&match.candidates.some(line=>hasValue(line.netMassKg)||hasValue(line.grossMassKg))).map(match=>({...match,line:null,doc:packingDoc,ambiguous:true}));
+   const reconciliationIssues=[...weightIssues,...ambiguousWeightIssues];
+   const packingListHasWeights=weightMatches.some(({line})=>hasValue(line.netMassKg)||hasValue(line.grossMassKg));
+   const invoiceHasWeights=lines.some(line=>hasValue(line.netMassKg)||hasValue(line.grossMassKg));
+   const weightsNeedDecision=reconciliationIssues.length>0;
    const customsLines=lines.map((line,index)=>{
-     const plLine=packingDoc?findSourceLine(packingDoc,line):null;
+     const plLine=sourceLineMatches[index]?.line||null;
      const workingNet=selectedWeightSource==="packing_list"?plLine?.netMassKg:line.netMassKg;
      const workingGross=selectedWeightSource==="packing_list"?plLine?.grossMassKg:line.grossMassKg;
      return {
@@ -630,15 +663,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      };
    });
 
-   const conflicts=[];
-   customsLines.forEach((row,index)=>{
-     const invLine=lines[index];
-     const plLine=packingDoc?findSourceLine(packingDoc,invLine):null;
-     if(!plLine)return;
-     const netDifferent=hasValue(invLine?.netMassKg)&&hasValue(plLine?.netMassKg)&&String(invLine.netMassKg)!==String(plLine.netMassKg);
-     const grossDifferent=hasValue(invLine?.grossMassKg)&&hasValue(plLine?.grossMassKg)&&String(invLine.grossMassKg)!==String(plLine.grossMassKg);
-     if(netDifferent||grossDifferent)conflicts.push({doc:packingDoc,line:plLine,invoice:invLine});
-   });
+   const conflicts=reconciliationIssues;
 
    const checks=[
      {label:"Invoice number",status:hasValue(invoice.invoiceNumber)?"pass":"warning",detail:hasValue(invoice.invoiceNumber)?value(invoice.invoiceNumber):"Not extracted"},
@@ -646,7 +671,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
      {label:"Consignee",status:hasValue(invoice.consignee)?"pass":"warning",detail:hasValue(invoice.consignee)?value(invoice.consignee):"Not extracted"},
      {label:"HS codes",status:lines.every(l=>hasValue(l.hsCode))?"pass":"warning",detail:lines.every(l=>hasValue(l.hsCode))?"All goods lines have HS codes.":"One or more goods lines are missing an HS code."},
      {label:"Country of origin",status:lines.every(l=>hasValue(l.sourceCountryCode))?"pass":"warning",detail:lines.every(l=>hasValue(l.sourceCountryCode))?"All goods lines have an origin code.":"One or more goods lines are missing an origin code."},
-     {label:"Weight comparison",status:conflicts.length?(pack.extractedData?.weightSourceDecision?"pass":"warning"):"pass",detail:conflicts.length?(pack.extractedData?.weightSourceDecision?"Source selected: "+(pack.extractedData.weightSourceDecision.source==="packing_list"?"Packing List":"Commercial Invoice")+". Working weights have been updated.":"Line-level weight differences found between the invoice and packing list — a source must be selected."):"No line-level weight discrepancies found."}
+     {label:"Weight comparison",status:weightsNeedDecision?"warning":"pass",detail:weightsNeedDecision?(selectedWeightSource?"Packing List weights are available; Commercial Invoice weights are missing or differ. "+(selectedWeightSource==="packing_list"?"Packing List":"Commercial Invoice")+" selected as the working source.":"Packing List weights are available; Commercial Invoice weights are missing or differ. Select a source for working customs weights."):"No line-level weight source issue detected."}
    ];
 
    const exportCountry=value(invoice.countryOfExport).trim().toUpperCase();
@@ -670,10 +695,10 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
        sourcePage:sourceFor(invoiceDoc)
      });
    }
-   if(conflicts.length&&!pack.extractedData?.weightSourceDecision){
+   if(weightsNeedDecision&&!pack.extractedData?.weightSourceDecision){
      agentIssues.push({
-       title:"Weight discrepancy needs a decision",
-       detail:"The commercial invoice and packing list contain different weights. Choose the source to use for the customs entry, or email the customer for confirmation.",
+       title:"Weight source needs a decision",
+       detail:ambiguousWeightIssues.length?"Some invoice lines could not be matched uniquely to Packing List lines. Review the source documents before choosing working customs weights.":packingListHasWeights&&!invoiceHasWeights?"Packing List weights are available for matching goods lines, but the Commercial Invoice contains no line-level weights. Choose the source for working customs weights, or email the customer for confirmation.":"The Commercial Invoice and Packing List have missing or different weights on matching goods lines. Choose the source for working customs weights, or email the customer for confirmation.",
        sourceDocumentId:packingDoc?.id||null,
        sourcePage:sourceFor(packingDoc)
      });
@@ -692,26 +717,36 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
          invoice:value(invoice.invoiceNumber),exporter:value(invoice.exporter),consignee:value(invoice.consignee),
          currency:value(invoice.currency),invoiceValue:value(invoice.totalInvoiceValue),exportCountry:value(invoice.countryOfExport),exporterAddress:value(invoice.exporterAddress),exporterAddressLine1:value(invoice.exporterAddressLine1),exporterPostcode:value(invoice.exporterPostcode),exporterCity:value(invoice.exporterCity),exporterCountryIso:value(invoice.exporterCountryIso),exporterEoriNo:value(invoice.exporterEoriNo),consigneeAddress:value(invoice.consigneeAddress),consigneeAddressLine1:value(invoice.consigneeAddressLine1),consigneePostcode:value(invoice.consigneePostcode),consigneeCity:value(invoice.consigneeCity),consigneeCountryIso:value(invoice.consigneeCountryIso),
          destination:value(invoice.sourceCountryOfDestination),packages:value(invoice.totalPackages),
-         gross:value(selectedWeightSource==="packing_list"?packingDoc?.extraction?.totalGrossWeight:invoice.totalGrossWeight),
-         net:value(selectedWeightSource==="packing_list"?packingDoc?.extraction?.totalNetWeight:invoice.totalNetWeight),
+         gross:value(selectedWeightSource==="packing_list"?(packingDoc?.extraction?.totalGrossWeight??sumWeight(customsLines,"gross")):invoice.totalGrossWeight),
+         net:value(selectedWeightSource==="packing_list"?(packingDoc?.extraction?.totalNetWeight??sumWeight(customsLines,"net")):invoice.totalNetWeight),
          deliveryTerm:value(invoice.deliveryTerm),lines:customsLines,
-         sourceLabel:invoiceDoc?.filename||"Commercial Invoice",sourceDocumentId:invoiceDoc?.id||null,sourcePage:sourceFor(invoiceDoc),weightSourceDecision:pack.extractedData?.weightSourceDecision?.source||null
+         sourceLabel:invoiceDoc?.filename||"Commercial Invoice",sourceDocumentId:invoiceDoc?.id||null,sourcePage:sourceFor(invoiceDoc),weightSourceDecision:pack.extractedData?.weightSourceDecision?.source||null,
+         weightSourceNote:ambiguousWeightIssues.length?ambiguousWeightIssues.length+" line(s) could not be matched uniquely. No Packing List weights have been applied to those lines.":selectedWeightSource==="invoice"&&packingListHasWeights&&!invoiceHasWeights?"The Commercial Invoice contains no line-level weights, so it cannot provide working net or gross values. Packing List weights remain available.":null
        },
        persist:false
      },
      {type:"validationSummary",checks:Array.isArray(pack.validationChecks)&&pack.validationChecks.length?pack.validationChecks:(Array.isArray(pack.extractedData?.validationChecks)&&pack.extractedData.validationChecks.length?pack.extractedData.validationChecks:checks),persist:false},
-     ...(conflicts.length&&!pack.extractedData?.weightSourceDecision?[{
+     ...(weightsNeedDecision&&!pack.extractedData?.weightSourceDecision?[{
        type:"weightDecision",
-       text:"Weight discrepancy detected. The invoice and packing list contain different line-level weights. No value has been silently chosen.",
+       text:ambiguousWeightIssues.length?"Some invoice lines could not be matched uniquely to Packing List lines. No ambiguous Packing List values will be applied. Review the linked sources, then choose which source to use for working customs weights.":packingListHasWeights&&!invoiceHasWeights?"Packing List weights are available for matching goods lines, but the Commercial Invoice contains no weights. The invoice remains the primary commercial document; choose which source to use for working customs weights. No extraction values have been copied.":"The Commercial Invoice and Packing List have missing or different line-level weights. Choose which source to use for working customs weights. No extraction values have been copied.",
+       invoiceDocumentId:invoiceDoc?.id||null,
+       invoicePage:sourceFor(invoiceDoc),
+       packingDocumentId:packingDoc?.id||null,
+       packingPage:sourceFor(packingDoc),
        conflicts,
        persist:false
-     }]:[{type:"agent",text:"Cross-document validation: no line-level weight source conflicts require a decision.",persist:false}])
+     }]:[{type:"agent",text:weightsNeedDecision?"Weight source selected: "+(selectedWeightSource==="packing_list"?"Packing List":"Commercial Invoice")+". The selected source supplies working customs weights where lines were matched; source extractions remain unchanged."+(ambiguousWeightIssues.length?" "+ambiguousWeightIssues.length+" line(s) remain unresolved because their Packing List match is ambiguous.":""):"Cross-document validation: no line-level weight source issues require a decision.",persist:false}])
    ];
  };
+
+ function sumWeight(customsLines,key){
+   const values=customsLines.map(line=>line[key]).filter(value=>value!==undefined&&value!==null&&value!=="").map(Number).filter(Number.isFinite);
+   return values.length?values.reduce((total,value)=>total+value,0):undefined;
+ }
  useEffect(()=>{
    const saved=Array.isArray(pack.extractedData?.agentMessages)?pack.extractedData.agentMessages:[];
    setMessages([...buildSummary(),...saved]);
- },[pack.id,pack.extractedData?.extractionRunId,pack.validationStatus,pack.validationChecks,pack.extractedData?.validationStatus,pack.extractedData?.validationChecks,extractedDocuments]);
+ },[pack.id,pack.extractedData?.extractionRunId,pack.extractedData?.weightSourceDecision?.selectedAt,pack.validationStatus,pack.validationChecks,pack.extractedData?.validationStatus,pack.extractedData?.validationChecks,extractedDocuments]);
  useEffect(()=>{if(!documentRows.length){setSelectedDocumentId(null);return;}setSelectedDocumentId(current=>documentRows.some(d=>(d.id||d.name)===current)?current:(documentRows[0].id||documentRows[0].name));},[pack.id,pack.uploadedFiles?.length]);
 
  const selectedDocument=documentRows.find(d=>(d.id||d.name)===selectedDocumentId)||documentRows[0];
@@ -786,31 +821,23 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
  const decideWeights=(source,conflicts)=>{
    const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
    const sourceLabel=source==="packing_list"?"Packing List":"Commercial Invoice";
-   let changed=0;
-   (data.lines||[]).forEach(inv=>{
-     const match=conflicts.find(c=>String(c.invoice.description||"").trim().toLowerCase()===String(inv.description||"").trim().toLowerCase());
-     if(!match)return;
-     inv.netMassKg=source==="packing_list"?match.line.netMassKg:match.invoice.netMassKg;
-     inv.grossMassKg=source==="packing_list"?match.line.grossMassKg:match.invoice.grossMassKg;
-     inv.weightSource=source;
-     changed++;
-   });
-   data.weightSourceDecision={source,sourceLabel,selectedAt:new Date().toISOString(),linesChanged:changed};
+   const matchedLines=Array.isArray(conflicts)?conflicts.filter(conflict=>!conflict.ambiguous).length:0;
+   data.weightSourceDecision={source,sourceLabel,selectedAt:new Date().toISOString(),matchedLines};
    data.weightSelectionStatus="resolved";
    const next={...pack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
    updatePack?.(next);
-   notify?.(sourceLabel+" weights selected — "+changed+" line"+(changed===1?"":"s")+" updated");
+   notify?.(sourceLabel+" selected as the working weight source for "+matchedLines+" matching line"+(matchedLines===1?"":"s"));
  };
  const emailWeightIssue=conflicts=>{
    const displayValue=v=>v===undefined||v===null||v===""?"—":String(v);
    const subject="Customs IDP - weight confirmation required";
-   const body="Hello,\\n\\nWe have found differences between the Commercial Invoice and Packing List weights. Please confirm which weights should be used for the customs declaration.\\n\\n"+conflicts.map(c=>"- "+(c.invoice.description||"Goods line")+": Commercial Invoice net "+displayValue(c.invoice.netMassKg)+" kg / gross "+displayValue(c.invoice.grossMassKg)+" kg; Packing List net "+displayValue(c.line.netMassKg)+" kg / gross "+displayValue(c.line.grossMassKg)+" kg.").join("\\n")+"\\n\\nRegards\\nCustoms IDP";
+   const body="Hello,\\n\\nThe Commercial Invoice and Packing List do not provide the same weight information. Please confirm which weights should be used for the customs declaration.\\n\\n"+conflicts.map(c=>"- "+(c.invoice.description||"Goods line")+": Commercial Invoice net "+displayValue(c.invoice.netMassKg)+" kg / gross "+displayValue(c.invoice.grossMassKg)+" kg; Packing List net "+displayValue(c.line?.netMassKg)+" kg / gross "+displayValue(c.line?.grossMassKg)+" kg"+(c.ambiguous?" (Packing List line match is ambiguous)":"")+".").join("\\n")+"\\n\\nRegards\\nCustoms IDP";
    setEmailDraft({to:"",subject,body});
  };
  const renderMessage=(m,i)=>{
    const source=m.sourceDocumentId&&m.sourcePage?sourceButton(m.sourceLabel||("Source — page "+m.sourcePage),m.sourceDocumentId,m.sourcePage):null;
    if(m.type==="weightDecision"){
-     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text">{m.text.split("\n").map((x,j)=><React.Fragment key={j}>{x}{j<m.text.split("\n").length-1&&<br/>}</React.Fragment>)}</div><div className="weight-decision-actions"><button className="secondary" onClick={()=>decideWeights("invoice",m.conflicts)}>Use Commercial Invoice weights</button><button className="secondary" onClick={()=>decideWeights("packing_list",m.conflicts)}>Use Packing List weights</button><button className="secondary" onClick={()=>emailWeightIssue(m.conflicts)}><Mail size={15}/> Email customer</button></div></div></div>;
+     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text">{m.text.split("\n").map((x,j)=><React.Fragment key={j}>{x}{j<m.text.split("\n").length-1&&<br/>}</React.Fragment>)}</div><div className="chat-source">{m.invoiceDocumentId&&sourceButton("Open Commercial Invoice",m.invoiceDocumentId,m.invoicePage||1)}{m.packingDocumentId&&sourceButton("Open Packing List",m.packingDocumentId,m.packingPage||1)}</div><div className="weight-decision-actions"><button className="secondary" onClick={()=>decideWeights("invoice",m.conflicts)}>Use Commercial Invoice weights</button><button className="secondary" onClick={()=>decideWeights("packing_list",m.conflicts)}>Use Packing List weights</button><button className="secondary" onClick={()=>emailWeightIssue(m.conflicts)}><Mail size={15}/> Email customer</button></div></div></div>;
    }
    if(m.type==="customsEntrySummary"&&m.summary){
      const s=m.summary;
@@ -832,7 +859,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
              <div><span className="summary-kicker">CUSTOMS ENTRY SUMMARY</span><h3>{s.invoice||"Customs entry"}</h3></div>
              <span className="summary-status">Source: {s.sourceLabel}</span>
            </div>
-           {s.weightSourceDecision&&<div className="weight-source-selected"><CheckCircle2 size={15}/><span><b>Working weights:</b> {s.weightSourceDecision==="packing_list"?"Packing List":"Commercial Invoice"} selected. The selected values are now used for customs validation and downstream data.</span></div>}
+           {s.weightSourceDecision&&<div className="weight-source-selected"><CheckCircle2 size={15}/><span><b>Working weights:</b> {s.weightSourceDecision==="packing_list"?"Packing List":"Commercial Invoice"} selected. {s.weightSourceNote||"The customs summary shows values from the selected source; source extraction remains unchanged."}</span></div>}
            <div className="customs-party-grid">
              <div className="customs-party-card">
                <span className="customs-party-label">Exporter</span>
@@ -860,8 +887,8 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
              <div><span>Export</span><b>{s.exportCountry||"—"}</b></div>
              <div><span>Destination</span><b>{s.destination||"—"}</b></div>
              <div><span>Packages</span><b>{s.packages||"—"}</b></div>
-             <div><span>Gross Weight</span><b>{s.gross?s.gross+" kg":"—"}</b></div>
-             <div><span>Net Weight</span><b>{s.net?s.net+" kg":"—"}</b></div>
+             <div><span>Gross Weight</span><b>{s.gross!==""&&s.gross!=null?s.gross+" kg":"—"}</b></div>
+             <div><span>Net Weight</span><b>{s.net!==""&&s.net!=null?s.net+" kg":"—"}</b></div>
              <div><span>Delivery Term</span><b>{s.deliveryTerm||"—"}</b></div>
            </div>
            <div className="customs-summary-section">
@@ -869,7 +896,7 @@ function Review({pack,back,notify,onAssign,updatePack,validatePack,postToLCA,rep
              <div className="customs-line-table-wrap">
                <table className="customs-line-table">
                  <thead><tr><th>Line</th><th>Goods Description</th><th>HS Code</th><th>Origin</th><th>Qty</th><th>Net Weight (kg)</th><th>Gross Weight (kg)</th><th>Value</th></tr></thead>
-                 <tbody>{s.lines.map(line=><tr key={line.no}><td>{line.no}</td><td>{line.description}</td><td>{line.hs||"—"}</td><td>{line.origin||"—"}</td><td>{line.quantity||"—"}</td><td>{line.net||"—"}</td><td>{line.gross||"—"}</td><td>{line.itemValue?(s.currency+" "+line.itemValue):"—"}</td></tr>)}</tbody>
+                 <tbody>{s.lines.map(line=><tr key={line.no}><td>{line.no}</td><td>{line.description}</td><td>{line.hs||"—"}</td><td>{line.origin||"—"}</td><td>{line.quantity||"—"}</td><td>{line.net!==""&&line.net!=null?line.net:"—"}</td><td>{line.gross!==""&&line.gross!=null?line.gross:"—"}</td><td>{line.itemValue?(s.currency+" "+line.itemValue):"—"}</td></tr>)}</tbody>
                </table>
              </div>
            </div>
