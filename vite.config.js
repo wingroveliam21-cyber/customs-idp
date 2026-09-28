@@ -9,7 +9,13 @@ function localApiPlugin(){
         if(!req.url?.startsWith("/api/"))return next();
 
         const url=new URL(req.url,"http://localhost");
-        const handlerPath=url.pathname==="/api/extract"?"./api/extract.js":url.pathname==="/api/packs"?"./api/packs.js":null;
+        const handlers={
+          "/api/extract":"./api/extract.js",
+          "/api/packs":"./api/packs.js",
+          "/api/storage":"./api/storage.js",
+          "/api/agent":"./api/agent.js"
+        };
+        const handlerPath=handlers[url.pathname];
         if(!handlerPath)return next();
 
         req.query=Object.fromEntries(url.searchParams.entries());
