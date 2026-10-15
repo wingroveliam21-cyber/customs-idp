@@ -85,7 +85,23 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
   return()=>{active=false;};
 },[pack.id,pack.uploadedFiles]);
 
- const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
+ const DOCUMENT_TYPE_OPTIONS=[
+  ["commercial_invoice","Commercial Invoice"],["packing_list","Packing List"],["email","Email"],["export_document","Export Document"],["cmr","CMR / Transport Document"],["certificate_of_origin","Certificate of Origin"],["customs_declaration","Customs Declaration"],["other","Other Document"],["unclassified","Unclassified document"]
+];
+const classifyDocumentLabel=(doc)=>{
+  const saved=doc?.documentType||doc?.classification;
+  if(saved&&DOCUMENT_TYPE_OPTIONS.some(([value])=>value===saved))return saved;
+  const text=String(doc?.name||"").toLowerCase();
+  if(/invoice/.test(text))return "commercial_invoice";
+  if(/packing.?list|packlist/.test(text))return "packing_list";
+  if(/\.eml$|\.msg$|email|e-mail/.test(text))return "email";
+  if(/\bcmr\b|waybill|transport document|consignment note/.test(text))return "cmr";
+  if(/export|ex1|export declaration/.test(text))return "export_document";
+  if(/certificate of origin|\bcoo\b/.test(text))return "certificate_of_origin";
+  if(/customs declaration|import declaration/.test(text))return "customs_declaration";
+  return "unclassified";
+};
+const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    {id:"sample-1",name:"Commercial Invoice 88421.pdf"},{id:"sample-2",name:"Packing List 88421.pdf"},
    {id:"sample-3",name:"Certificate of Origin.pdf"},{id:"sample-4",name:"Transport Document.pdf"}
  ];
@@ -723,7 +739,8 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
    <div className="review-workspace-grid">
      <aside className="review-document-panel">
        <div className="review-workspace-panel-head"><div><span className="summary-kicker">SOURCE DOCUMENTS</span><h2>Document preview</h2></div><button type="button" className="secondary" onClick={()=>{setSelectedDocumentId(selectedDocumentId||(documentRows[0]?.id||documentRows[0]?.name));setPreviewPage(1);setShowPreview(true);}}>Expand</button></div>
-       <div className="review-document-picker review-inline-document-picker"><FileText size={14}/><select value={selectedDocumentId||""} onChange={e=>{setSelectedDocumentId(e.target.value);setPreviewPage(1);}} aria-label="Select source document">{documentRows.map(doc=><option key={doc.id||doc.name} value={doc.id||doc.name}>{doc.name}</option>)}</select></div>
+       <div className="review-document-picker review-inline-document-picker"><FileText size={14}/><select value={selectedDocumentId||""} onChange={e=>{setSelectedDocumentId(e.target.value);setPreviewPage(1);}} aria-label="Select source document">{documentRows.map(doc=><option key={doc.id||doc.name} value={doc.id||doc.name}>{DOCUMENT_TYPE_OPTIONS.find(([value])=>value===classifyDocumentLabel(doc))?.[1]||"Unclassified document"} — {doc.name}</option>)}</select></div>
+       <div className="review-document-type-control"><label htmlFor="review-document-type">Document type</label><select id="review-document-type" value={classifyDocumentLabel(selectedDocument)} onChange={async e=>{const documentId=selectedDocument?.id||selectedDocument?.name;const documentType=e.target.value;const files=(pack.uploadedFiles||[]).map(file=>(file.id||file.name)===documentId?{...file,documentType,classification:documentType,classificationCorrectedBy:currentUserName||null,classificationCorrectedAt:new Date().toISOString()}:file);const data={...(pack.extractedData||{}),classificationCorrections:[...(pack.extractedData?.classificationCorrections||[]),{documentId,filename:selectedDocument?.name||"",from:classifyDocumentLabel(selectedDocument),to:documentType,customerId:pack.customerId||pack.customer_id||null,correctedAt:new Date().toISOString()}]};await updatePack?.({...pack,uploadedFiles:files,extractedData:data});recordHistory?.(pack,"document_classification_corrected","Document type changed to "+(DOCUMENT_TYPE_OPTIONS.find(([v])=>v===documentType)?.[1]||documentType),null,{documentId,documentType});}}>{DOCUMENT_TYPE_OPTIONS.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></div>
        {pack.email&&<div className="review-email-under-picker"><button type="button" className="secondary review-show-email-btn" onClick={()=>setShowEmailSource(true)}><Mail size={14}/> View source email</button></div>}
        {selectedDocumentIsPdf&&<div className="review-viewer-controls review-inline-viewer-controls"><span>Page {previewPage}</span><button type="button" onClick={()=>setPreviewPage(p=>Math.max(1,p-1))} aria-label="Previous page">−</button><button type="button" onClick={()=>setPreviewPage(p=>p+1)} aria-label="Next page">+</button></div>}
        <div className={"review-inline-document-body "+(selectedDocumentIsSpreadsheet?"spreadsheet-document":selectedDocumentIsImage?"image-document":"pdf-document")}>
