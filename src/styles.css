@@ -3151,3 +3151,38 @@ body {
   gap: 6px;
   white-space: nowrap;
 }
+
+
+/* Join the document and extracted-data panes into one continuous review workspace */
+.review-workspace-grid {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 14px;
+  background: var(--panel, #fff);
+}
+.review-workspace-grid > .review-document-panel {
+  border: 0;
+  border-right: 1px solid var(--border, #e5e7eb);
+  border-radius: 0;
+  box-shadow: none;
+}
+.review-workspace-grid > .review-workspace-data {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+@media (max-width: 900px) {
+  .review-workspace-grid {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    gap: 14px;
+    background: transparent;
+  }
+  .review-workspace-grid > .review-document-panel,
+  .review-workspace-grid > .review-workspace-data {
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 14px;
+  }
+}
