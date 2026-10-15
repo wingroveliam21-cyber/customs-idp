@@ -28,7 +28,7 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
  const [showPreview,setShowPreview]=useState(false);
  const [showAgentPopup,setShowAgentPopup]=useState(false);
  const [showAuditModal,setShowAuditModal]=useState(false);
- useEffect(()=>{const openAudit=()=>setShowAuditModal(true);window.addEventListener("customs-idp:open-pack-audit-trail",openAudit);return()=>window.removeEventListener("customs-idp:open-pack-audit-trail",openAudit);},[]);
+ useEffect(()=>{const openAudit=()=>setShowAuditModal(true);const openAgent=()=>setShowAgentPopup(true);window.addEventListener("customs-idp:open-pack-audit-trail",openAudit);window.addEventListener("customs-idp:open-review-agent",openAgent);return()=>{window.removeEventListener("customs-idp:open-pack-audit-trail",openAudit);window.removeEventListener("customs-idp:open-review-agent",openAgent);};},[]);
  const autoScrollChatRef=useRef(false);
  const isChatNearBottom=()=>{
    const el=chatHistoryRef.current;
@@ -731,7 +731,7 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
        </div>
      </aside>
    <div className="chat-review-panel chat-review-full review-workspace-data">
-     <div className="chat-review-head"><div className="agent-title"><div className="agent-orb"><FileText size={18}/></div><div><b>Extracted data & checks</b><span>Review the extracted customs record and resolve exceptions</span></div></div><div className="review-source-actions"><button type="button" className="primary" onClick={()=>setShowAgentPopup(true)}><Bot size={14}/> AI Agent</button></div></div>
+     <div className="chat-review-head"><div className="agent-title"><div className="agent-orb"><FileText size={18}/></div><div><b>Extracted data & checks</b><span>Review the extracted customs record and resolve exceptions</span></div></div></div>
      <div className="chat-review-intro">Select a field to inspect its source evidence. Use the AI Agent when you need an explanation, a correction, or help resolving a discrepancy.</div>
      <div className="review-matched-customer"><span>Matched customer</span><strong>{identificationCustomer}</strong><span className={"summary-status "+(identificationStatus==="Matched"?"":"review-customer-unmatched")}>{identificationStatus}</span></div>
    {showCreateCustomer&&<div className="modal-backdrop" onMouseDown={()=>{if(!creatingCustomer)setShowCreateCustomer(false);}}><div className="modal-card customer-create-modal" onMouseDown={event=>event.stopPropagation()}><div className="modal-head"><div><div className="eyebrow">Customer identification</div><h2>Create customer</h2><p>Create and associate a customer with this pack.</p></div><button type="button" className="row-btn" onClick={()=>setShowCreateCustomer(false)} disabled={creatingCustomer}><X size={18}/></button></div><form onSubmit={createCustomer}><label className="field"><span>Customer name <strong>*</strong></span><input value={createCustomerForm.name} onChange={event=>setCreateCustomerForm(current=>({...current,name:event.target.value}))} disabled={creatingCustomer}/></label>{createCustomerError&&<div className="password-login-error">{createCustomerError}</div>}<div className="modal-actions"><button type="button" className="secondary" onClick={()=>setShowCreateCustomer(false)} disabled={creatingCustomer}>Cancel</button><button type="submit" className="primary" disabled={creatingCustomer}>{creatingCustomer?"Creating…":"Create customer"}</button></div></form></div></div>}
