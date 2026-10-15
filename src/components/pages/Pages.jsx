@@ -598,6 +598,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        <div className="chat-message-content">
          <div className="customs-entry-summary-card">
            {s.weightSourceDecision&&<div className="weight-source-selected"><CheckCircle2 size={15}/><span><b>Working weights:</b> {s.weightSourceDecision==="packing_list"?"Packing List":"Commercial Invoice"} selected. The selected values are now used for customs validation and downstream data.</span></div>}
+           <div className="customs-summary-section customs-header-data-section"><div className="summary-section-title">Header data</div>
            <div className="customs-party-grid">
              <div className="customs-party-card">
                <span className="customs-party-label">Exporter</span>
@@ -642,7 +643,8 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
              <div><span>Freight Currency</span><b>{s.freightCurrency||"—"}</b></div>
              <div><span>Delivery Term</span><b>{s.deliveryTerm||"—"}</b></div>
            </div>
-           <div className="customs-summary-section">
+           </div>
+           <div className="customs-summary-section customs-goods-lines-section">
              <div className="summary-section-title">Goods lines <span>{s.lines.length}</span></div>
              <div className="customs-line-table-wrap">
                <table className="customs-line-table">
@@ -765,8 +767,8 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
            </div>
          </div>
        </div>}
-       {(()=>{const summary=buildSummary().find(m=>m.type==="customsEntrySummary");return summary?renderMessage(summary,0):null})()}
        {messages.filter(m=>m.type==="validationSummary"&&Array.isArray(m.checks)?m.checks.some(check=>check.status==="fail"||check.status==="review"):["agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).map(renderMessage)}
+       {(()=>{const summary=buildSummary().find(m=>m.type==="customsEntrySummary");return summary?renderMessage(summary,0):null})()}
        {messages.filter(m=>["customsEntrySummary","validationSummary","agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).length===0&&<div className="review-document-empty"><FileText size={24}/><b>Extracted data is not ready</b><span>Wait for extraction to finish or open the AI Agent for help.</span></div>}
      </div>
      
