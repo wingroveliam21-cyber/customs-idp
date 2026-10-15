@@ -282,7 +282,6 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
  const selectedDocumentIsPdf=/\.pdf$/i.test(selectedDocument?.name||"");
  const selectedDocumentIsImage=/^image\//i.test(selectedDocument?.type||"")||/\.(png|jpe?g|webp|gif)$/i.test(selectedDocument?.name||"");
  const selectedDocumentIsSpreadsheet=/\.(xlsx|xls|xlsm|xlsb|csv)$/i.test(selectedDocument?.name||"")||/spreadsheet|excel|csv/i.test(selectedDocument?.type||"");
- const selectedDocumentFrameUrl=selectedDocumentUrl&&selectedDocumentIsPdf?selectedDocumentUrl+"#page="+previewPage+"&view=FitH&zoom=page-width":selectedDocumentUrl;
 
  const applyAgentAction=action=>{
    if(!action||action.kind!=="update_field")return null;
