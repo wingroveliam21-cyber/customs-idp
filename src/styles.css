@@ -3194,3 +3194,23 @@ body {
   border-radius: 0;
   background: transparent;
 }
+
+
+/* Remove residual grey panel edges and background from the split review workspace */
+.review-workspace-grid,
+.review-workspace-grid > .review-document-panel,
+.review-workspace-grid > .review-workspace-data {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.review-workspace-grid {
+  background: transparent !important;
+}
+.review-workspace-grid > .review-document-panel {
+  border-right: 1px solid #e5e7eb !important;
+  background: #fff;
+}
+.review-workspace-grid > .review-workspace-data {
+  background: #fff;
+}
