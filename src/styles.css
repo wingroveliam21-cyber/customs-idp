@@ -3265,3 +3265,55 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* Review layout: distinct header and item-level data sections */
+.review-workspace-data .review-extracted-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.review-workspace-data .validation-summary-card {
+  margin: 0;
+  width: 100%;
+  max-width: none;
+}
+.review-workspace-data .customs-entry-summary-card {
+  width: 100%;
+  max-width: none;
+}
+.review-workspace-data .customs-header-data-section,
+.review-workspace-data .customs-goods-lines-section {
+  margin-top: 0;
+  padding: 16px;
+  border: 1px solid #e1e7ef;
+  border-radius: 12px;
+  background: #fff;
+}
+.review-workspace-data .customs-header-data-section > .summary-section-title,
+.review-workspace-data .customs-header-table-section > .summary-section-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: .045em;
+}
+.review-workspace-data .customs-goods-lines-section .customs-line-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.review-workspace-data .customs-header-data-section .customs-party-grid {
+  margin-bottom: 14px;
+}
+.review-workspace-data .customs-header-data-section .customs-header-table {
+  border-top: 1px solid #e1e7ef;
+}
+@media (max-width: 900px) {
+  .review-workspace-data .customs-header-data-section,
+  .review-workspace-data .customs-goods-lines-section {
+    padding: 12px;
+  }
+}
