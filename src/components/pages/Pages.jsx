@@ -758,7 +758,8 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
            </div>
          </div>
        </div>}
-       {messages.filter(m=>["customsEntrySummary","validationSummary","agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).map(renderMessage)}
+       {(()=>{const summary=buildSummary().find(m=>m.type==="customsEntrySummary");return summary?renderMessage(summary,0):null})()}
+       {messages.filter(m=>["validationSummary","agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).map(renderMessage)}
        {messages.filter(m=>["customsEntrySummary","validationSummary","agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).length===0&&<div className="review-document-empty"><FileText size={24}/><b>Extracted data is not ready</b><span>Wait for extraction to finish or open the AI Agent for help.</span></div>}
      </div>
      <div className="review-agent-launch-row"><span>Need help understanding a value or discrepancy?</span><button type="button" className="primary" onClick={()=>setShowAgentPopup(true)}><Bot size={15}/> Open AI Agent</button></div>
