@@ -3017,3 +3017,100 @@ body {
     min-height: 280px;
   }
 }
+
+
+/* Review workspace polish: full-height document, compact matched customer, toolbar audit */
+.review-workspace-grid {
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
+}
+.review-document-panel {
+  height: 100%;
+  min-height: 0;
+}
+.review-document-panel .review-inline-document-body {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: auto;
+  overflow: auto;
+}
+.review-document-panel .review-inline-document-body > div {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.review-document-panel .review-inline-document-body img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.review-matched-customer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 14px 0;
+  padding: 10px 13px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 9px;
+  background: #f8fafc;
+  min-width: 0;
+}
+.review-matched-customer > span:first-child {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  flex: 0 0 auto;
+}
+.review-matched-customer strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #334155;
+  font-size: 12px;
+}
+.review-matched-customer .summary-status {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.review-customer-unmatched {
+  background: #fff7ed !important;
+  color: #9a3412 !important;
+}
+.review-audit-modal {
+  width: min(680px, 100%);
+  max-height: min(78vh, 760px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(15,23,42,.25);
+}
+.review-audit-modal .customs-summary-modal-head {
+  flex: 0 0 auto;
+}
+.review-audit-modal-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+.review-top-audit-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .review-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+  .review-document-panel {
+    height: min(68vh, 760px);
+  }
+  .review-matched-customer {
+    flex-wrap: wrap;
+  }
+}
