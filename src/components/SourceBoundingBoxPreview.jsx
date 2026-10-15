@@ -105,7 +105,7 @@ export default function SourceBoundingBoxPreview({ url, extraction, page = 1, on
       if (!cancelled) { setItems(mapped); setLoading(false); }
     }).catch((err) => { if (!cancelled) { setError(err?.message || "Unable to render this PDF page."); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [pdf, page, pageSize.width, pdfjs]);
+  }, [pdf, page, pdfjs]);
 
   const matchedBoxes = useMemo(() => {
     if (!selectedEvidence?.sourceText) return [];
