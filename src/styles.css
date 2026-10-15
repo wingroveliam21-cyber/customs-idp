@@ -3186,3 +3186,11 @@ body {
     border-radius: 14px;
   }
 }
+
+
+/* Remove the outer grey frame around the joined review workspace */
+.review-workspace-grid {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
