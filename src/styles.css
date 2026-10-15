@@ -3114,3 +3114,40 @@ body {
     flex-wrap: wrap;
   }
 }
+
+
+/* Keep the review header focused on the AI Agent; place source email with the document selector */
+.review-workspace-data .review-source-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.review-workspace-data .review-source-actions > button {
+  flex: 0 0 auto;
+}
+.review-email-under-picker {
+  flex: 0 0 auto;
+  margin: 0 14px 10px 14px;
+  display: flex;
+  align-items: center;
+}
+.review-email-under-picker .review-show-email-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 11px;
+}
+@media (max-width: 900px) {
+  .review-email-under-picker {
+    margin-bottom: 8px;
+  }
+}
+
+.review-top-agent-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
