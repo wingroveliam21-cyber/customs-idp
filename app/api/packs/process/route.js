@@ -2,6 +2,7 @@ import handler from "../../../../src/server/api/process-pack.js";
 import { runLegacyHandler } from "../../../../src/server/nextLegacyAdapter.js";
 
 export const runtime="nodejs";
+export const maxDuration=300;
 
 export async function POST(request){
   const body=await request.json().catch(()=>({}));

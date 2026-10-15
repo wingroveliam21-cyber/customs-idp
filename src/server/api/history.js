@@ -38,13 +38,15 @@ export default async function handler(req,res){
       const packId=String(body.packId||"").trim();
       const action=String(body.action||"").trim();
       if(!packId||!action)return res.status(400).json({error:"Pack id and action are required"});
+      const packs=await supabaseFetch("document_packs?organisation_id=eq."+encodeURIComponent(auth.organisationId)+"&id=eq."+encodeURIComponent(packId)+"&select=id&limit=1");
+      if(!packs?.[0])return res.status(404).json({error:"Pack not found or access denied"});
 
       const row={
         organisation_id:auth.organisationId,
         pack_id:packId,
         user_id:auth.userId||null,
-        actor_name:String(body.actorName||auth.name||auth.email||"Customs IDP System"),
-        actor_type:String(body.actorType||"user"),
+        actor_name:String(auth.name||auth.email||"Customs IDP User"),
+        actor_type:"user",
         action,
         description:String(body.description||action),
         before_data:body.beforeData??null,

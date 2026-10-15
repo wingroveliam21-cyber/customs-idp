@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { createAuthCookie } from "../src/server/api/authGuard.js";
 import { createProcessPackHandler } from "../src/server/api/process-pack.js";
 
+process.env.IDP_AUTH_SECRET="process-pack-api-test-secret";
+
 function response(){return {statusCode:200,body:null,status(code){this.statusCode=code;return this;},json(value){this.body=value;return this;}};}
 
 test("process endpoint derives tenant and actor rather than trusting request input",async()=>{

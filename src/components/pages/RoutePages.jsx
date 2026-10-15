@@ -10,10 +10,10 @@ import { ProcessingReviewGuard } from "../ProcessingReviewGuard.jsx";
 import { useWorkspace } from "../../App.jsx";
 
 function InboxRoute(){
-  const { livePacks, currentUser, currentUserName, openPack, handleUpload, assignPack, deletePack, emailSyncStatus, packLoadError, packsLoading }=useWorkspace();
+  const { livePacks, currentUser, currentUserName, openPack, handleUpload, assignPack, deletePack, packLoadError, packsLoading }=useWorkspace();
   const [query,setQuery]=useState("");
-  const filteredPacks=livePacks.filter(pack=>[pack.id,pack.customer,pack.status,pack.ticket].join(" ").toLowerCase().includes(query.toLowerCase()));
-  return <InboxPage key={currentUser?.id||currentUserName} packs={filteredPacks} packsLoading={packsLoading} query={query} setQuery={setQuery} openPack={openPack} onUpload={handleUpload} onAssign={assignPack} onDelete={deletePack} emailSyncStatus={emailSyncStatus} currentUserKey={currentUser?.id||currentUserName} packLoadError={packLoadError}/>;
+  const filteredPacks=livePacks.filter(pack=>[pack.customer,pack.status,pack.ticket,pack.uploadedFiles?.[0]?.name,pack.email?.subject].join(" ").toLowerCase().includes(query.toLowerCase()));
+  return <InboxPage key={currentUser?.id||currentUserName} packs={filteredPacks} packsLoading={packsLoading} query={query} setQuery={setQuery} openPack={openPack} onUpload={handleUpload} onAssign={assignPack} onDelete={deletePack} currentUserKey={currentUser?.id||currentUserName} packLoadError={packLoadError}/>;
 }
 
 function PackNotFound(){
@@ -30,7 +30,7 @@ function ReviewRoute(){
   const { selectedPack, packsLoading, currentUserName, navigate, notify, assignPack, updatePack, validatePack, postToLCA, reprocessPack, persistPack, persistValidatedPack, recordHistory }=useWorkspace();
   if(packsLoading&&!selectedPack)return <section><div className="panel settings-card"><h1>Loading pack…</h1><p>Loading the selected document pack.</p></div></section>;
   if(!selectedPack)return <PackNotFound/>;
-  return selectedPack.status==="Processing"
+  return selectedPack.status==="Processing"&&!selectedPack.processingError
     ? <ProcessingReviewGuard onBack={()=>navigate("inbox")}/>
     : <Review pack={{...selectedPack,workingRecord:selectedPack.workingRecord}} currentUserName={currentUserName} back={()=>navigate("inbox")} notify={notify} onAssign={assignPack} updatePack={updatePack} validatePack={validatePack} postToLCA={postToLCA} reprocessPack={reprocessPack} persistPack={persistPack} persistValidatedPack={persistValidatedPack} recordHistory={recordHistory}/>;
 }

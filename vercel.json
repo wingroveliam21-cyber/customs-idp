@@ -4,6 +4,7 @@
     {"source":"/api/outlook/webhook","destination":"/api/outlook?action=webhook"}
   ],
   "crons":[
-    {"path":"/api/outlook?action=renew","schedule":"0 3 * * *"}
+    {"path":"/api/outlook?action=renew","schedule":"0 3 * * *"},
+    {"path":"/api/email-jobs/process","schedule":"15 3 * * *"}
   ]
 }

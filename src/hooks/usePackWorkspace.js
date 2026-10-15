@@ -1,17 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase.js";
 import { customerStrategyStore, normaliseDatabasePack } from "../domain/packData.js";
+import { replacePersistedPack, savePackRequest } from "../services/packPersistence.js";
 
 export function usePackWorkspace({ authenticated }) {
-const localPacksRef=useRef([]);
-  try{
-    if(typeof window!=="undefined"){
-      const saved=localStorage.getItem("customs-idp-packs");
-      localPacksRef.current=saved?JSON.parse(saved):[];
-    }
-  }catch{
-    localPacksRef.current=[];
-  }
   const [livePacks,setLivePacks]=useState([]);
 
   const [dataSource,setDataSource]=useState("local");
@@ -69,16 +61,7 @@ const localPacksRef=useRef([]);
         // Load persisted packs immediately. Outlook intake is webhook-driven; mailbox
         // scanning is intentionally not part of application startup.
         const data=await loadDatabasePacks();
-        if(active && Array.isArray(data) && data.length){
-          // Keep browser-stored document metadata when older database rows pre-date
-          // persistent uploadedFiles support, and prefer database metadata once present.
-          const localPackMap=new Map((localPacksRef.current||[]).map(pack=>[pack.id,pack]));
-          const nextPacks=data.map(pack=>{
-            const local=localPackMap.get(pack.id);
-            return pack.uploadedFiles?.length ? pack : (local?.uploadedFiles?.length ? {...pack,uploadedFiles:local.uploadedFiles} : pack);
-          });
-          setLivePacks(nextPacks);
-        }
+        if(active&&Array.isArray(data))setLivePacks(data);
       } catch(error) {
         // Do not silently display the four prototype packs when the live
         // organisation database cannot be loaded. That masks production
@@ -117,14 +100,12 @@ const localPacksRef=useRef([]);
     return()=>{active=false;if(channel)supabase.removeChannel(channel);};
   },[authenticated]);
 
-  useEffect(()=>{ if(dataSource!=="database")return; try { localStorage.setItem("customs-idp-packs",JSON.stringify(livePacks)); } catch {} },[livePacks,dataSource]);
   const persistPack=async(pack)=>{
     const save=async()=>{
-      const response=await fetch("/api/packs",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify(pack)});
-      const data=await response.json().catch(()=>({}));
-      if(!response.ok) throw new Error(data.error||("Database save failed (HTTP "+response.status+")"));
+      const savedPack=await savePackRequest(pack);
+      setLivePacks(previous=>replacePersistedPack(previous,savedPack));
       setDataSource("database");
-      return true;
+      return savedPack;
     };
     try{
       return await save();

@@ -41,8 +41,8 @@ export const customers = [
   {name:"Raven Industrial", code:"RAVN-021", mailbox:"customs.raven@inbox.example", rules:6, processed:"1,406"}
 ];
 
-export const DEFAULT_INBOX_COLUMN_KEYS=["pack","packId","customer","owner","documents","status","received"];
-export const DEFAULT_INBOX_COLUMNS=[{key:"pack",label:"File name"},{key:"packId",label:"Pack ID"},{key:"customer",label:"Customer"},{key:"owner",label:"Owner"},{key:"documents",label:"Documents"},{key:"status",label:"Status"},{key:"invoiceNumber",label:"Invoice number"},{key:"export",label:"Export"},{key:"destination",label:"Destination"},{key:"invoiceValue",label:"Invoice value"},{key:"currency",label:"Currency"},{key:"deliveryTerm",label:"Delivery term"},{key:"received",label:"Received"},{key:"validation",label:"Validation"}];
+export const DEFAULT_INBOX_COLUMN_KEYS=["pack","customer","owner","documents","status","received"];
+export const DEFAULT_INBOX_COLUMNS=[{key:"pack",label:"File name"},{key:"customer",label:"Customer"},{key:"owner",label:"Owner"},{key:"documents",label:"Documents"},{key:"status",label:"Status"},{key:"invoiceNumber",label:"Invoice number"},{key:"export",label:"Export"},{key:"destination",label:"Destination"},{key:"invoiceValue",label:"Invoice value"},{key:"currency",label:"Currency"},{key:"deliveryTerm",label:"Delivery term"},{key:"received",label:"Received"},{key:"validation",label:"Validation"}];
 export function normaliseInboxColumnSelection(value){
   const available=new Set(DEFAULT_INBOX_COLUMNS.map(column=>column.key));
   if(Array.isArray(value)){

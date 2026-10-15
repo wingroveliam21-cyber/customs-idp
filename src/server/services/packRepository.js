@@ -43,7 +43,9 @@ export function normalizePack(row){
     uploadedFiles:Array.isArray(manager.uploadedFiles)?manager.uploadedFiles:[],
     processingStartedAt:manager.processingStartedAt||undefined,
     processingCompletedAt:manager.processingCompletedAt||undefined,
-    processingError:row?.processing_error||undefined
+    processingError:row?.processing_error||undefined,
+    processingToken:row?.processing_token||undefined,
+    processingLeaseUntil:row?.processing_lease_until||undefined
   };
 }
 
@@ -54,7 +56,12 @@ export function packToRow(pack){
   extractedData._manager={
     processingStartedAt:pack.processingStartedAt||null,
     processingCompletedAt:pack.processingCompletedAt||null,
-    uploadedFiles:Array.isArray(pack.uploadedFiles)?pack.uploadedFiles:[]
+    uploadedFiles:Array.isArray(pack.uploadedFiles)?pack.uploadedFiles.map(file=>{
+      const clean={...file};
+      delete clean.accessUrl;
+      delete clean.accessUrlExpiresAt;
+      return clean;
+    }):[]
   };
   if(pack.validationStatus||pack.validationChecks||pack.validationSummary){
     extractedData._validation={
@@ -91,8 +98,32 @@ export async function loadPack(organisationId,packId){
   return rows[0]?normalizePack(rows[0]):null;
 }
 
-export async function savePack(pack){
+export async function claimPackProcessing(organisationId,packId){
+  const rows=await supabaseFetch("rpc/claim_document_pack_processing",{
+    method:"POST",
+    body:JSON.stringify({p_organisation_id:organisationId,p_pack_id:packId})
+  });
+  return rows?.[0]?normalizePack(rows[0]):null;
+}
+
+export class PackProcessingConflictError extends Error{
+  constructor(message="Pack processing ownership was lost."){super(message);this.name="PackProcessingConflictError";}
+}
+
+export async function savePack(pack,{processingToken=null,releaseProcessing=false}={}){
   const row=packToRow(pack);
+  if(processingToken){
+    row.processing_token=releaseProcessing?null:processingToken;
+    if(releaseProcessing)row.processing_lease_until=null;
+    const rows=await supabaseFetch(
+      "document_packs?id=eq."+encodeURIComponent(pack.id)+
+      "&organisation_id=eq."+encodeURIComponent(pack.organisationId)+
+      "&processing_token=eq."+encodeURIComponent(processingToken),
+      {method:"PATCH",body:JSON.stringify(row),headers:{Prefer:"return=representation"}}
+    );
+    if(!rows?.[0])throw new PackProcessingConflictError();
+    return normalizePack(rows[0]);
+  }
   await supabaseFetch("document_packs",{
     method:"POST",
     body:JSON.stringify(row),

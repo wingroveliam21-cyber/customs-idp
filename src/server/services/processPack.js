@@ -5,10 +5,12 @@ import { buildValidatedPack } from "../../domain/packValidation.js";
 import { normaliseCustomerName, resolveCustomerMatch } from "../../domain/customerMatching.js";
 import { runReviewAgent } from "../api/agent.js";
 import {
+  claimPackProcessing,
   insertHistory,
   listCustomers,
   loadCustomerStrategy,
   loadPack,
+  PackProcessingConflictError,
   savePack
 } from "./packRepository.js";
 
@@ -23,11 +25,18 @@ function cleanSegment(value){
   return String(value||"").replace(/[^a-zA-Z0-9._-]+/g,"-").replace(/^-+|-+$/g,"")||"document";
 }
 
-async function loadStoredSource(file,packId){
+export function sourcePathBelongsToPack(storagePath,{organisationId="",packId="",packUuid=""}={}){
+  const path=String(storagePath||"");
+  if(!path)return false;
+  const legacyPrefix=cleanSegment(packId)+"/";
+  const canonicalPrefix=`organisations/${cleanSegment(organisationId)}/packs/${cleanSegment(packUuid||packId)}/`;
+  return path.startsWith(legacyPrefix)||path.startsWith(canonicalPrefix);
+}
+
+async function loadStoredSource(file,context){
   const storagePath=String(file?.storagePath||"");
-  const prefix=cleanSegment(packId)+"/";
   if(!storagePath)throw new Error("Source document has no persisted storage path.");
-  if(!storagePath.startsWith(prefix))throw new Error("Source document storage path does not belong to this pack.");
+  if(!sourcePathBelongsToPack(storagePath,context))throw new Error("Source document storage path does not belong to this pack.");
   const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   if(!url||!key)throw new Error("Supabase storage configuration is missing.");
   const supabase=createClient(url,key,{auth:{autoRefreshToken:false,persistSession:false}});
@@ -39,6 +48,7 @@ async function loadStoredSource(file,packId){
 }
 
 const productionDependencies={
+  claimPackProcessing,
   loadPack,
   savePack,
   listCustomers,
@@ -97,24 +107,29 @@ export async function processPack({organisationId,packId,reason,actor,dependenci
   if(!packId)throw new ProcessPackError("Pack id is required.",400);
   if(!["initial","reprocess"].includes(reason))throw new ProcessPackError("Reason must be initial or reprocess.",400);
   const deps={...productionDependencies,...dependencies};
-  let pack=await deps.loadPack(organisationId,packId);
-  if(!pack)throw new ProcessPackError("Pack was not found.",404);
-  if(String(pack.organisationId)!==String(organisationId))throw new ProcessPackError("Pack does not belong to the active organisation.",403);
+  const existing=await deps.loadPack(organisationId,packId);
+  if(!existing)throw new ProcessPackError("Pack was not found.",404);
+  if(String(existing.organisationId)!==String(organisationId))throw new ProcessPackError("Pack does not belong to the active organisation.",403);
+  let pack=await deps.claimPackProcessing(organisationId,packId);
+  if(!pack)throw new ProcessPackError("This pack is already being processed. Wait for the current attempt to finish.",409);
+  const processingToken=pack.processingToken||pack.processing_token;
+  if(!processingToken)throw new ProcessPackError("Pack processing did not return an ownership token.",500);
+  const save=(candidate,releaseProcessing=false)=>deps.savePack(candidate,{processingToken,releaseProcessing});
+  try{
   if(reason==="reprocess")pack=resetForReprocess(pack);
-
   const startedAt=deps.now();
-  pack=await deps.savePack({...pack,status:"Processing",processingStartedAt:startedAt,processingCompletedAt:undefined,processingError:undefined});
+  pack=await save({...pack,status:"Processing",processingStartedAt:startedAt,processingCompletedAt:undefined,processingError:undefined});
   const files=Array.isArray(pack.uploadedFiles)?pack.uploadedFiles:[];
   if(!files.length){
-    const failed=await deps.savePack({...pack,status:"Needs review",processingCompletedAt:deps.now(),processingError:"No persisted source documents are available."});
+    const failed=await save({...pack,status:"Needs review",processingCompletedAt:deps.now(),processingError:"No persisted source documents are available."},true);
     try{await deps.insertHistory({organisationId,packId,actor,action:"processing_error",description:"Pack processing could not start",afterData:{error:failed.processingError}});}catch(error){deps.logError("Unable to record pack processing history",error);}
     throw new ProcessPackError("No persisted source documents are available.",422,failed);
   }
-  const storagePrefix=cleanSegment(packId)+"/";
-  const invalidPath=files.find(file=>file.storagePath&&!String(file.storagePath).startsWith(storagePrefix));
+  const sourceContext={organisationId,packId,packUuid:pack.packUuid||packId};
+  const invalidPath=files.find(file=>!sourcePathBelongsToPack(file?.storagePath,sourceContext));
   if(invalidPath){
     const message="Source document storage path does not belong to this pack.";
-    const failed=await deps.savePack({...pack,status:"Needs review",processingCompletedAt:deps.now(),processingError:message});
+    const failed=await save({...pack,status:"Needs review",processingCompletedAt:deps.now(),processingError:message},true);
     try{await deps.insertHistory({organisationId,packId,actor,action:"processing_error",description:"Pack source validation failed",afterData:{error:message,filename:invalidPath.name}});}catch(error){deps.logError("Unable to record pack processing history",error);}
     throw new ProcessPackError(message,422,failed);
   }
@@ -130,7 +145,7 @@ export async function processPack({organisationId,packId,reason,actor,dependenci
   for(const file of files){
     const document={id:file.id||file.storagePath,filename:file.name||"document",mimeType:file.type||"application/octet-stream",storagePath:file.storagePath||null};
     try{
-      const source=await deps.loadSource(file,packId);
+      const source=await deps.loadSource(file,sourceContext);
       const result=await deps.extractDocument({fileData:source.fileData,filename:document.filename,mimeType:source.mimeType||document.mimeType,customerStrategy:extractionStrategy});
       if(!result?.extraction)throw new Error("No extraction result was returned.");
       document.mimeType=source.mimeType||document.mimeType;
@@ -194,7 +209,7 @@ export async function processPack({organisationId,packId,reason,actor,dependenci
     pack={...pack,status:needsReview?"Needs review":"Ready",processingCompletedAt:deps.now(),processingError:warnings.length?warnings.join(" | "):undefined};
   }
 
-  const saved=await deps.savePack(pack);
+  const saved=await save(pack,true);
   const events=auditFailed
     ? [{action:"processing_error",description:"Automated email audit did not complete",afterData:{error:saved.processingError}}]
     : historyEvents({pack:saved,reason,documentCount:successful.length,customerKnown:Boolean(customer),strategyApplied:Boolean(strategy)});
@@ -206,4 +221,15 @@ export async function processPack({organisationId,packId,reason,actor,dependenci
     }
   }
   return saved;
+  }catch(error){
+    if(error instanceof ProcessPackError)throw error;
+    if(error instanceof PackProcessingConflictError)throw new ProcessPackError(error.message,409);
+    const message=error?.message||"Pack processing failed.";
+    let failed=pack;
+    try{
+      failed=await save({...pack,status:pack.email?"Processing":"Needs review",processingCompletedAt:pack.email?undefined:deps.now(),processingError:message},true);
+      try{await deps.insertHistory({organisationId,packId,actor,action:"processing_error",description:"Pack processing failed",afterData:{error:message}});}catch(historyError){deps.logError("Unable to record pack processing history",historyError);}
+    }catch(saveError){deps.logError("Unable to persist pack processing failure",saveError);}
+    throw new ProcessPackError(message,500,failed);
+  }
 }

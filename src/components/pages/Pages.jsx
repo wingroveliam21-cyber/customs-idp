@@ -61,14 +61,11 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
     const entries=await Promise.all((pack.uploadedFiles||[]).map(async f=>{
       try{
         if(f.storagePath){
-          const cachedExpiry=Date.parse(f.accessUrlExpiresAt||"");
-          const cachedIsUsable=f.accessUrl && Number.isFinite(cachedExpiry) && cachedExpiry-Date.now()>5*60*1000;
-          if(cachedIsUsable)return [f.id,f.accessUrl];
-
           const response=await fetch("/api/storage",{
             method:"POST",
             headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({action:"signed-url",path:f.storagePath,packId:pack.id})
+            credentials:"include",
+            body:JSON.stringify({action:"signed-url",fileId:f.id,packId:pack.id})
           });
           const data=await response.json();
           if(response.ok&&data.accessUrl){
@@ -381,7 +378,7 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
        const nextData=JSON.parse(JSON.stringify(pack.extractedData||{}));
        nextData.customerIdentification={...(nextData.customerIdentification||{}),matched:true,ambiguous:false,possibleMatch:false,customerId:data.customer.id,customerName:data.customer.name,matchedBy:"agent-created"};
        savedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:data.strategy?.config||{},customerStrategyApplied:false,customerStrategyVersion:data.strategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
-       await persistPack?.(savedPack);
+       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The customer was created, but the pack update conflicted with another change.");savedPack=persisted;}
        await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current pack.",null,{customerId:data.customer.id,customerName:data.customer.name},null,"system","Customs IDP Agent");
        reply="Customer "+data.customer.name+" was created and linked to this pack.";
      }
@@ -407,7 +404,7 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
        const confirmation={type:"agent",text:"Customer strategy v"+String(saveData.strategy.version||"")+" was saved to "+customer.name+" and applied to this pack. It will be used automatically for future packs identified for this customer.",persist:true};
        nextData.agentMessages=[...(nextData.agentMessages||[]),confirmation];
        savedPack={...pack,customer:customer.name,customerId:customer.id,customerStrategy:saveData.strategy.config||strategy,customerStrategyApplied:true,customerStrategyVersion:saveData.strategy.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
-       await persistPack?.(savedPack);
+       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The strategy was saved, but the pack update conflicted with another change.");savedPack=persisted;}
        await recordHistory?.(savedPack,"strategy_applied","Customer strategy saved and applied by Review Agent.",null,{customerId:customer.id,customerName:customer.name,version:saveData.strategy.version||null},null,"system","Customs IDP Agent");
        reply=confirmation.text;
      }
@@ -457,8 +454,7 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
      const data=JSON.parse(JSON.stringify(savedPack.extractedData||{}));
      data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...savedPack,extractedData:data};
-     await persistPack?.(finalPack);
-     updatePack?.(finalPack);
+     await updatePack?.(finalPack);
    }catch(error){
      const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
      const completed=[...conversationBefore,failed];
@@ -468,7 +464,7 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
      updatePack?.(finalPack);
    }finally{setIsSending(false);}
  };
- const decideWeightApportionment=()=>{
+ const decideWeightApportionment=async()=>{
    const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
    data.weightApportionmentDecision={
      status:"approved",
@@ -477,9 +473,11 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
      method:"line-value net allocation, then net-ratio gross allocation"
    };
    const next={...pack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
-   updatePack?.(next);recordHistory?.(next,"weight_apportionment","Approved weight apportionment",null,{method:"line-value net allocation, then net-ratio gross allocation"});
+   const saved=await updatePack?.(next);
+   if(!saved)return;
+   await recordHistory?.(saved,"weight_apportionment","Approved weight apportionment",null,{method:"line-value net allocation, then net-ratio gross allocation"});
    notify?.("Weight apportionment approved — validating the derived line weights");
-   if(typeof persistValidatedPack==="function") setTimeout(()=>persistValidatedPack(next,true),0);
+   if(typeof persistValidatedPack==="function") await persistValidatedPack(saved,true);
    else notify?.("Weight apportionment saved — press Validate data to run the checks");
  };
  const declineWeightApportionment=()=>{
@@ -684,7 +682,7 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
  const canConfirmCustomer=identificationPossible&&!identificationMatched&&!identificationAmbiguous&&Array.isArray(customerIdentification.candidates)&&customerIdentification.candidates.length>0;
  const canCreateCustomer=!identificationMatched&&!identificationAmbiguous&&!identificationPossible;
  const suggestedCustomerName=customerIdentification.exporterName||customerIdentification.importerName||"this customer";
- const confirmCustomerMatch=async candidate=>{if(!candidate?.id)return;const sourceValue=candidate.sourceValue||customerIdentification.exporterName||customerIdentification.importerName||"";const sourceType=candidate.matchedBy||"exporter";try{const response=await fetch("/api/organisation",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"confirm-customer-memory",customerId:candidate.id,sourceValue,sourceType})});const data=await response.json().catch(()=>({}));if(!response.ok||!data.customer?.id)throw new Error(data.error||"Unable to save customer memory.");const updatedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategyApplied:false,customerIdentification:{...customerIdentification,matched:true,possibleMatch:false,ambiguous:false,customerId:data.customer.id,customerName:data.customer.name,matchedBy:"memory-confirmed",memoryConfirmed:true}};updatePack?.(updatedPack);await persistPack?.(updatedPack);await recordHistory?.(updatedPack,"customer_memory_confirmed","Customer match confirmed and saved to memory.",null,{customerId:data.customer.id,sourceValue,sourceType},null,"user",currentUserName||null);}catch(error){notify?.(error.message||"Unable to confirm customer match.");}};
+ const confirmCustomerMatch=async candidate=>{if(!candidate?.id)return;const sourceValue=candidate.sourceValue||customerIdentification.exporterName||customerIdentification.importerName||"";const sourceType=candidate.matchedBy||"exporter";try{const response=await fetch("/api/organisation",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"confirm-customer-memory",customerId:candidate.id,sourceValue,sourceType})});const data=await response.json().catch(()=>({}));if(!response.ok||!data.customer?.id)throw new Error(data.error||"Unable to save customer memory.");const updatedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategyApplied:false,customerIdentification:{...customerIdentification,matched:true,possibleMatch:false,ambiguous:false,customerId:data.customer.id,customerName:data.customer.name,matchedBy:"memory-confirmed",memoryConfirmed:true}};const persisted=await updatePack?.(updatedPack);if(!persisted)throw new Error("Customer match was saved, but the pack association could not be saved.");await recordHistory?.(persisted,"customer_memory_confirmed","Customer match confirmed and saved to memory.",null,{customerId:data.customer.id,sourceValue,sourceType},null,"user",currentUserName||null);}catch(error){notify?.(error.message||"Unable to confirm customer match.");}};
  const openCreateCustomer=()=>{
    setCreateCustomerForm({name:customerIdentification.exporterName||customerIdentification.importerName||""});
    setCreateCustomerError("");
@@ -710,10 +708,9 @@ function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePa
        matchedBy:customerIdentification.matchedBy||(customerIdentification.exporterName?"exporter":"importer")
      };
      const updatedPack={...pack,customer:data.customer.name||name,customerId:createdCustomerId,customerStrategyApplied:false,customerIdentification:createdIdentification};
-     updatePack?.(updatedPack);
-     const persisted=await persistPack?.(updatedPack);
+     const persisted=await updatePack?.(updatedPack);
      if(persisted===false)throw new Error("Customer was created, but the pack association could not be saved.");
-     await recordHistory?.(updatedPack,"customer_created_and_associated",`Customer created and associated with pack: ${data.customer.name||name}`,null,{customerId:createdCustomerId,identificationSource:createdIdentification.matchedBy||null},null,"user",currentUserName||null);
+     await recordHistory?.(persisted,"customer_created_and_associated",`Customer created and associated with pack: ${data.customer.name||name}`,null,{customerId:createdCustomerId,identificationSource:createdIdentification.matchedBy||null},null,"user",currentUserName||null);
      setShowCreateCustomer(false);
    }catch(error){setCreateCustomerError(error.message||"Unable to create customer.");}
    finally{setCreatingCustomer(false);}
@@ -953,6 +950,8 @@ function SettingsPage({currentUserRole="member"}){
   const [invite,setInvite]=useState({name:"",email:"",role:"member"});
   const [inviting,setInviting]=useState(false);
   const [inviteMessage,setInviteMessage]=useState("");
+  const [emailJobs,setEmailJobs]=useState([]);
+  const [emailJobsError,setEmailJobsError]=useState("");
 
   const loadOutlook=async()=>{
     const response=await fetch("/api/outlook?action=status",{credentials:"include"});
@@ -966,6 +965,25 @@ function SettingsPage({currentUserRole="member"}){
     loadOutlook().catch(()=>{if(active)setOutlook({loading:false,connected:false,connection:null,subscriptionHealth:null});});
     return()=>{active=false;};
   },[]);
+
+  const loadEmailJobs=async()=>{
+    const response=await fetch("/api/email-jobs",{credentials:"include"});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||"Unable to load email intake status.");
+    setEmailJobs(Array.isArray(data.jobs)?data.jobs:[]);
+  };
+
+  useEffect(()=>{let active=true;loadEmailJobs().catch(error=>{if(active)setEmailJobsError(error.message||"Unable to load email intake status.");});return()=>{active=false;};},[]);
+
+  const retryEmailJob=async jobId=>{
+    setEmailJobsError("");
+    try{
+      const response=await fetch("/api/email-jobs",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({jobId})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.error||"Unable to retry email intake.");
+      await loadEmailJobs();
+    }catch(error){setEmailJobsError(error.message||"Unable to retry email intake.");}
+  };
 
   useEffect(()=>{
     if(!syncRun?.id)return;
@@ -1084,6 +1102,13 @@ function SettingsPage({currentUserRole="member"}){
         </> : <button className="primary-action" onClick={connectOutlook} disabled={connecting}>{connecting?"Opening Microsoft…":"Connect Outlook"}</button>}
         {error&&<div className="password-login-error">{error}</div>}
         <small>Access is limited to Microsoft Graph Mail.Read. Customs IDP does not request permission to send or modify email.</small>
+      </div>
+
+      <div className="panel settings-card">
+        <h2>Inbound email processing</h2>
+        <p>Durable Resend intake jobs, including retries and terminal failures.</p>
+        {emailJobsError&&<div className="password-login-error">{emailJobsError}</div>}
+        {!emailJobs.length?<div className="setting-status"><span>No inbound email jobs recorded</span></div>:emailJobs.slice(0,10).map(job=><div className={"setting-status "+(job.status==="failed"?"setting-status-error":"")} key={job.id}><span>{job.provider_email_id}<small>{job.stage}{job.last_error?" · "+job.last_error:""}</small></span><b>{job.status} · {job.attempts}/{job.max_attempts}{canInviteUsers&&["failed","retry"].includes(job.status)?<button className="text-btn" type="button" onClick={()=>retryEmailJob(job.id)}>Retry</button>:null}</b></div>)}
       </div>
 
       <div className="panel settings-card"><h2>Middleware</h2><p>Configure the output contract used by the downstream customs system.</p><label>Endpoint</label><input value="https://middleware.internal/customs/orders" readOnly/><label>Format</label><select><option>JSON</option></select><label>Destination</label><input value="ASM UK" readOnly/></div>

@@ -237,25 +237,36 @@ ${customerStrategyPrompt}`
       ]
     };
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-5.6-luna",
-        input: [{ role: "user", content }],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "customs_document_extraction_v2",
-            strict: true,
-            schema
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 180000);
+    let response;
+    try {
+      response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: "gpt-5.6-luna",
+          input: [{ role: "user", content }],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "customs_document_extraction_v2",
+              strict: true,
+              schema
+            }
           }
-        }
-      })
-    });
+        })
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("Document extraction timed out after 180 seconds.");
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const data = await response.json();
 

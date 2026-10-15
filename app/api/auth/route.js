@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const COOKIE_NAME = "customs-idp-auth";
-const MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const MAX_AGE_SECONDS = 60 * 60;
 const DEFAULT_ORGANISATION_ID = "demo-organisation";
 
 const LOCAL_TEST_USERS = {
@@ -15,8 +15,9 @@ const LOCAL_TEST_USERS = {
 };
 
 function getSecret() {
-  const configured = String(process.env.IDP_AUTH_SECRET || "");
-  return configured || crypto.createHash("sha256").update(String(process.env.IDP_ACCESS_PASSWORD || "customs-idp-auth")).digest("hex");
+  const configured = String(process.env.IDP_AUTH_SECRET || "").trim();
+  if (!configured) throw new Error("IDP_AUTH_SECRET is required.");
+  return configured;
 }
 
 function sign(value) {
@@ -51,7 +52,8 @@ function getAuthContext(request) {
   }
 
   const issuedAt = Number(payload?.iat);
-  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > MAX_AGE_SECONDS * 1000) return null;
+  const age = Date.now() - issuedAt;
+  if (!Number.isFinite(issuedAt) || age < 0 || age > MAX_AGE_SECONDS * 1000) return null;
 
   const expected = sign(encoded);
   if (signature.length !== expected.length) return null;
@@ -144,7 +146,7 @@ async function getMembership(userId) {
 export async function GET(request) {
   const url = new URL(request.url);
 
-  if (url.searchParams.get("debug") === "1") {
+  if (url.searchParams.get("debug") === "1" && isLocalTestRequest(request)) {
     return NextResponse.json(
       {
         route: "app/api/auth/route",
@@ -164,7 +166,9 @@ export async function GET(request) {
     );
   }
 
-  const context = getAuthContext(request);
+  let context;
+  try { context = getAuthContext(request); }
+  catch (error) { return NextResponse.json({ error: error.message }, { status: 503 }); }
   if (!context) return NextResponse.json({ authenticated: false });
 
   return NextResponse.json({

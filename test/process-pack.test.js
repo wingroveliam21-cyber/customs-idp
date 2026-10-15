@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ProcessPackError, processPack } from "../src/server/services/processPack.js";
+import { ProcessPackError, processPack, sourcePathBelongsToPack } from "../src/server/services/processPack.js";
 
 const clone=value=>JSON.parse(JSON.stringify(value));
 
@@ -20,6 +20,7 @@ function fixture(overrides={}){
   };
   const dependencies={
     loadPack:async()=>clone(basePack),
+    claimPackProcessing:async()=>({...clone(basePack),processingToken:"attempt-1"}),
     savePack:async pack=>{const copy=clone(pack);saved.push(copy);return copy;},
     listCustomers:async()=>[],
     loadCustomerStrategy:async(_organisationId,customerId)=>{strategies.push(customerId);return null;},
@@ -35,6 +36,20 @@ function fixture(overrides={}){
   };
   return {dependencies,saved,history,strategies};
 }
+
+test("processPack rejects a concurrent worker when the pack lease is already owned",async()=>{
+  let extracted=false;
+  const setup=fixture({dependencies:{
+    claimPackProcessing:async()=>null,
+    extractDocument:async()=>{extracted=true;return {extraction:{lines:[]}};}
+  }});
+  await assert.rejects(
+    processPack({organisationId:"org-1",packId:"PK-1",reason:"initial",actor:{type:"system"},dependencies:setup.dependencies}),
+    error=>error instanceof ProcessPackError&&error.status===409
+  );
+  assert.equal(extracted,false);
+  assert.equal(setup.saved.length,0);
+});
 
 test("processPack processes persisted sources and records ordered history",async()=>{
   const setup=fixture({
@@ -127,6 +142,13 @@ test("processPack rejects a source path belonging to another pack",async()=>{
   assert.match(setup.saved.at(-1).processingError,/does not belong/);
 });
 
+test("organisation-scoped storage paths belong to their pack UUID",()=>{
+  const context={organisationId:"org-1",packId:"PK-1",packUuid:"pack-uuid"};
+  assert.equal(sourcePathBelongsToPack("organisations/org-1/packs/pack-uuid/invoice.pdf",context),true);
+  assert.equal(sourcePathBelongsToPack("organisations/org-1/packs/other-pack/invoice.pdf",context),false);
+  assert.equal(sourcePathBelongsToPack("organisations/other-org/packs/pack-uuid/invoice.pdf",context),false);
+});
+
 test("processPack does not write completion history when final persistence fails",async()=>{
   let saves=0;
   const setup=fixture({dependencies:{savePack:async pack=>{saves++;if(saves===2)throw new Error("Database unavailable");return clone(pack);}}});
@@ -134,5 +156,16 @@ test("processPack does not write completion history when final persistence fails
     processPack({organisationId:"org-1",packId:"PK-1",reason:"initial",actor:{type:"user"},dependencies:setup.dependencies}),
     /Database unavailable/
   );
-  assert.equal(setup.history.length,0);
+  assert.equal(setup.history.some(event=>["processed","reprocessed"].includes(event.action)),false);
+});
+
+test("unexpected processing failures become visible and recoverable",async()=>{
+  const setup=fixture({dependencies:{listCustomers:async()=>{throw new Error("Customer service unavailable");}}});
+  await assert.rejects(
+    processPack({organisationId:"org-1",packId:"PK-1",reason:"initial",actor:{type:"user"},dependencies:setup.dependencies}),
+    error=>error instanceof ProcessPackError&&error.message==="Customer service unavailable"
+  );
+  assert.equal(setup.saved.at(-1).status,"Needs review");
+  assert.equal(setup.saved.at(-1).processingError,"Customer service unavailable");
+  assert.equal(setup.history.at(-1).action,"processing_error");
 });
