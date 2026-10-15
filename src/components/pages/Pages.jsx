@@ -766,7 +766,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
          </div>
        </div>}
        {(()=>{const summary=buildSummary().find(m=>m.type==="customsEntrySummary");return summary?renderMessage(summary,0):null})()}
-       {messages.filter(m=>["validationSummary","agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).map(renderMessage)}
+       {messages.filter(m=>m.type==="validationSummary"&&Array.isArray(m.checks)?m.checks.some(check=>check.status==="fail"||check.status==="review"):["agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).map(renderMessage)}
        {messages.filter(m=>["customsEntrySummary","validationSummary","agentIssues","weightDecision","weightApportionmentDecision"].includes(m.type)).length===0&&<div className="review-document-empty"><FileText size={24}/><b>Extracted data is not ready</b><span>Wait for extraction to finish or open the AI Agent for help.</span></div>}
      </div>
      
