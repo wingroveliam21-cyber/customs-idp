@@ -359,8 +359,13 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    setMessages(updatedMessages);
    notify?.(applied?"Added "+applied+" email-sourced field"+(applied===1?"":"s")+" to the pack":"No new email-sourced fields were added");
  };
- const ignoreSuggestedFields=(messageIndex)=>{
-   setMessages(current=>[...current.map((m,index)=>index===messageIndex?{...m,handled:"ignored"}:m),{type:"agent",text:"Understood. I left the extracted document data unchanged and did not add the email values.",persist:true}]);
+ const ignoreSuggestedFields=async(messageIndex)=>{
+   const updatedMessages=[...messages.map((m,index)=>index===messageIndex?{...m,handled:"ignored"}:m),{type:"agent",text:"Understood. I left the extracted document data unchanged and did not add the email values.",persist:true}];
+   setMessages(updatedMessages);
+   const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
+   data.agentMessages=updatedMessages.filter(m=>m.persist!==false).map(serialiseMessage);
+   const saved=await updatePack?.({...pack,extractedData:data});
+   if(!saved)notify?.("The response was shown, but this chat update could not be saved.");
  };
  const serialiseMessage=m=>({
    type:m.type||"agent",text:m.text||"",sourceDocumentId:m.sourceDocumentId||null,
@@ -497,7 +502,8 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      setMessages(completed);
      const data=JSON.parse(JSON.stringify(pack.extractedData||{}));data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...pack,extractedData:data};
-     updatePack?.(finalPack);
+     const savedFailure=await updatePack?.(finalPack);
+     if(!savedFailure)notify?.("The error message was shown, but the chat could not be saved.");
    }finally{setIsSending(false);}
  };
  const decideWeightApportionment=async()=>{
