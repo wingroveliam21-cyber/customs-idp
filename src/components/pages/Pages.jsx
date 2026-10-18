@@ -359,8 +359,13 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    setMessages(updatedMessages);
    notify?.(applied?"Added "+applied+" email-sourced field"+(applied===1?"":"s")+" to the pack":"No new email-sourced fields were added");
  };
- const ignoreSuggestedFields=(messageIndex)=>{
-   setMessages(current=>[...current.map((m,index)=>index===messageIndex?{...m,handled:"ignored"}:m),{type:"agent",text:"Understood. I left the extracted document data unchanged and did not add the email values.",persist:true}]);
+ const ignoreSuggestedFields=async(messageIndex)=>{
+   const updatedMessages=[...messages.map((m,index)=>index===messageIndex?{...m,handled:"ignored"}:m),{type:"agent",text:"Understood. I left the extracted document data unchanged and did not add the email values.",persist:true}];
+   setMessages(updatedMessages);
+   const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
+   data.agentMessages=updatedMessages.filter(m=>m.persist!==false).map(serialiseMessage);
+   const saved=await updatePack?.({...pack,extractedData:data});
+   if(!saved)notify?.("The response was shown, but this chat update could not be saved.");
  };
  const serialiseMessage=m=>({
    type:m.type||"agent",text:m.text||"",sourceDocumentId:m.sourceDocumentId||null,
@@ -383,6 +388,11 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    const conversationBefore=[...messages,userMessage];
    setIsSending(true);setMessages([...conversationBefore,thinking]);setChat("");
    try{
+     // Persist the user's turn before waiting for the model so a refresh or timeout cannot lose it.
+     const interimData=JSON.parse(JSON.stringify(pack.extractedData||{}));
+     interimData.agentMessages=conversationBefore.filter(m=>m.persist!==false).map(serialiseMessage);
+     const interimSaved=await updatePack?.({...pack,extractedData:interimData});
+     if(!interimSaved)throw new Error("The message could not be saved to the pack. Please reload and try again.");
      const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack:{...pack,customerStrategy:pack.customerStrategy||pack.extractedData?.customerStrategy||getCustomerStrategy(pack.customerId||pack.customer),conversation:conversationBefore.slice(-12).map(m=>({type:m.type||"agent",text:m.text||""})),extractedData:{...(pack.extractedData||{}),agentMessages:undefined}}})});
      const result=await response.json();
      if(!response.ok)throw new Error(result.error||"Agent request failed");
@@ -394,12 +404,23 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        const response=await fetch("/api/organisation",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
        const data=await response.json().catch(()=>({}));
        if(!response.ok||!data.customer?.id)throw new Error(data.error||"Unable to create customer.");
+       let createdStrategy=data.strategy||null;
+       const proposedStrategy=result.strategyProposal?.resultingStrategy;
+       if(proposedStrategy){
+         const strategyResponse=await fetch("/api/organisation",{method:"PUT",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({customerId:data.customer.id,strategy:proposedStrategy})});
+         const strategyData=await strategyResponse.json().catch(()=>({}));
+         if(!strategyResponse.ok||!strategyData.strategy?.id)throw new Error("Customer was created, but its strategy could not be saved: "+(strategyData.error||"unknown error"));
+         createdStrategy=strategyData.strategy;
+       }
        const nextData=JSON.parse(JSON.stringify(pack.extractedData||{}));
        nextData.customerIdentification={...(nextData.customerIdentification||{}),matched:true,ambiguous:false,possibleMatch:false,customerId:data.customer.id,customerName:data.customer.name,matchedBy:"agent-created"};
-       savedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:data.strategy?.config||{},customerStrategyApplied:false,customerStrategyVersion:data.strategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       if(createdStrategy?.config)nextData.customerStrategy=createdStrategy.config;
+       if(createdStrategy?.version)nextData.customerStrategyVersion=createdStrategy.version;
+       nextData.customerStrategyApplied=Boolean(createdStrategy?.config);
+       savedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:createdStrategy?.config||{},customerStrategyApplied:Boolean(createdStrategy?.config),customerStrategyVersion:createdStrategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
        {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The customer was created, but the pack update conflicted with another change.");savedPack=persisted;}
-       await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current pack.",null,{customerId:data.customer.id,customerName:data.customer.name},null,"system","Customs IDP Agent");
-       reply="Customer "+data.customer.name+" was created and linked to this pack.";
+       await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current pack.",null,{customerId:data.customer.id,customerName:data.customer.name,strategyVersion:createdStrategy?.version||null},null,"system","Customs IDP Agent");
+       reply="Customer "+data.customer.name+" was created and linked to this pack."+(createdStrategy?.config?" Its customer strategy was also saved as version "+createdStrategy.version+".":"");
      }
      if(result.action==="save_customer_strategy"){
        const strategy=result.strategyProposal?.resultingStrategy;
@@ -473,14 +494,16 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const data=JSON.parse(JSON.stringify(savedPack.extractedData||{}));
      data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...savedPack,extractedData:data};
-     await updatePack?.(finalPack);
+     const persistedConversation=await updatePack?.(finalPack);
+     if(!persistedConversation)notify?.("The agent replied, but the complete chat turn could not be saved. Reload and retry saving the pack.");
    }catch(error){
      const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
      const completed=[...conversationBefore,failed];
      setMessages(completed);
      const data=JSON.parse(JSON.stringify(pack.extractedData||{}));data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...pack,extractedData:data};
-     updatePack?.(finalPack);
+     const savedFailure=await updatePack?.(finalPack);
+     if(!savedFailure)notify?.("The error message was shown, but the chat could not be saved.");
    }finally{setIsSending(false);}
  };
  const decideWeightApportionment=async()=>{
