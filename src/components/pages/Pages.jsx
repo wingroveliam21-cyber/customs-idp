@@ -399,12 +399,23 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        const response=await fetch("/api/organisation",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
        const data=await response.json().catch(()=>({}));
        if(!response.ok||!data.customer?.id)throw new Error(data.error||"Unable to create customer.");
+       let createdStrategy=data.strategy||null;
+       const proposedStrategy=result.strategyProposal?.resultingStrategy;
+       if(proposedStrategy){
+         const strategyResponse=await fetch("/api/organisation",{method:"PUT",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({customerId:data.customer.id,strategy:proposedStrategy})});
+         const strategyData=await strategyResponse.json().catch(()=>({}));
+         if(!strategyResponse.ok||!strategyData.strategy?.id)throw new Error("Customer was created, but its strategy could not be saved: "+(strategyData.error||"unknown error"));
+         createdStrategy=strategyData.strategy;
+       }
        const nextData=JSON.parse(JSON.stringify(pack.extractedData||{}));
        nextData.customerIdentification={...(nextData.customerIdentification||{}),matched:true,ambiguous:false,possibleMatch:false,customerId:data.customer.id,customerName:data.customer.name,matchedBy:"agent-created"};
-       savedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:data.strategy?.config||{},customerStrategyApplied:false,customerStrategyVersion:data.strategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       if(createdStrategy?.config)nextData.customerStrategy=createdStrategy.config;
+       if(createdStrategy?.version)nextData.customerStrategyVersion=createdStrategy.version;
+       nextData.customerStrategyApplied=Boolean(createdStrategy?.config);
+       savedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:createdStrategy?.config||{},customerStrategyApplied:Boolean(createdStrategy?.config),customerStrategyVersion:createdStrategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
        {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The customer was created, but the pack update conflicted with another change.");savedPack=persisted;}
-       await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current pack.",null,{customerId:data.customer.id,customerName:data.customer.name},null,"system","Customs IDP Agent");
-       reply="Customer "+data.customer.name+" was created and linked to this pack.";
+       await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current pack.",null,{customerId:data.customer.id,customerName:data.customer.name,strategyVersion:createdStrategy?.version||null},null,"system","Customs IDP Agent");
+       reply="Customer "+data.customer.name+" was created and linked to this pack."+(createdStrategy?.config?" Its customer strategy was also saved as version "+createdStrategy.version+".":"");
      }
      if(result.action==="save_customer_strategy"){
        const strategy=result.strategyProposal?.resultingStrategy;
