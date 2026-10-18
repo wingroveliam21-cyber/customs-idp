@@ -398,7 +398,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack:{...workingPack,customerStrategy:workingPack.customerStrategy||workingPack.extractedData?.customerStrategy||getCustomerStrategy(workingPack.customerId||workingPack.customer),conversation:conversationBefore.slice(-12).map(m=>({type:m.type||"agent",text:m.text||""})),extractedData:{...(workingPack.extractedData||{}),agentMessages:undefined}}})});
      const result=await response.json();
      if(!response.ok)throw new Error(result.error||"Agent request failed");
-     let reply=result.reply||"I couldn't produce an answer from the supplied workingPack.";
+     let reply=result.reply||"I couldn't produce an answer from the supplied pack.";
      let savedPack=workingPack;
      if(result.action==="create_customer"){
        const name=String(result.target?.customerName||workingPack.customer||workingPack.extractedData?.exporter||workingPack.extractedData?.exporterName||"").trim();
@@ -420,9 +420,9 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        if(createdStrategy?.version)nextData.customerStrategyVersion=createdStrategy.version;
        nextData.customerStrategyApplied=Boolean(createdStrategy?.config);
        savedPack={...workingPack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:createdStrategy?.config||{},customerStrategyApplied:Boolean(createdStrategy?.config),customerStrategyVersion:createdStrategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
-       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The customer was created, but the pack update conflicted with another change.");savedPack=persisted;}
-       await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current workingPack.",null,{customerId:data.customer.id,customerName:data.customer.name,strategyVersion:createdStrategy?.version||null},null,"system","Customs IDP Agent");
-       reply="Customer "+data.customer.name+" was created and linked to this workingPack."+(createdStrategy?.config?" Its customer strategy was also saved as version "+createdStrategy.version+".":"");
+       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The customer was created, but the pack update conflicted with another change.");savedPack=persisted;workingPack=persisted;}
+       await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current pack.",null,{customerId:data.customer.id,customerName:data.customer.name,strategyVersion:createdStrategy?.version||null},null,"system","Customs IDP Agent");
+       reply="Customer "+data.customer.name+" was created and linked to this pack."+(createdStrategy?.config?" Its customer strategy was also saved as version "+createdStrategy.version+".":"");
      }
      const durableStrategyRequest=result.action==="strategy_proposal"&&/\b(always|from\s+now\s+on|for\s+this\s+customer|customer[- ]specific|going\s+forward|every\s+pack|future\s+packs)\b/i.test(q);
      if(result.action==="save_customer_strategy"||durableStrategyRequest){
@@ -447,7 +447,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        const confirmation={type:"agent",text:"Customer strategy v"+String(saveData.strategy.version||"")+" was saved to "+customer.name+" and applied to this workingPack. It will be used automatically for future packs identified for this customer.",persist:true};
        nextData.agentMessages=[...(nextData.agentMessages||[]),confirmation];
        savedPack={...workingPack,customer:customer.name,customerId:customer.id,customerStrategy:saveData.strategy.config||strategy,customerStrategyApplied:true,customerStrategyVersion:saveData.strategy.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
-       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The strategy was saved, but the pack update conflicted with another change.");savedPack=persisted;}
+       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The strategy was saved, but the pack update conflicted with another change.");savedPack=persisted;workingPack=persisted;}
        await recordHistory?.(savedPack,"strategy_applied","Customer strategy saved and applied by Review Agent.",null,{customerId:customer.id,customerName:customer.name,version:saveData.strategy.version||null},null,"system","Customs IDP Agent");
        reply=confirmation.text;
      }
@@ -498,7 +498,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...savedPack,extractedData:data};
      const persistedConversation=await updatePack?.(finalPack);
-     if(!persistedConversation)notify?.("The agent replied, but the complete chat turn could not be saved. Reload and retry saving the workingPack.");
+     if(!persistedConversation)notify?.("The agent replied, but the complete chat turn could not be saved. Reload and retry saving the pack.");
    }catch(error){
      const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
      const completed=[...conversationBefore,failed];
