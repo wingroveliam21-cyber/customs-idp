@@ -383,6 +383,11 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    const conversationBefore=[...messages,userMessage];
    setIsSending(true);setMessages([...conversationBefore,thinking]);setChat("");
    try{
+     // Persist the user's turn before waiting for the model so a refresh or timeout cannot lose it.
+     const interimData=JSON.parse(JSON.stringify(pack.extractedData||{}));
+     interimData.agentMessages=conversationBefore.filter(m=>m.persist!==false).map(serialiseMessage);
+     const interimSaved=await updatePack?.({...pack,extractedData:interimData});
+     if(!interimSaved)throw new Error("The message could not be saved to the pack. Please reload and try again.");
      const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack:{...pack,customerStrategy:pack.customerStrategy||pack.extractedData?.customerStrategy||getCustomerStrategy(pack.customerId||pack.customer),conversation:conversationBefore.slice(-12).map(m=>({type:m.type||"agent",text:m.text||""})),extractedData:{...(pack.extractedData||{}),agentMessages:undefined}}})});
      const result=await response.json();
      if(!response.ok)throw new Error(result.error||"Agent request failed");
@@ -473,7 +478,8 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const data=JSON.parse(JSON.stringify(savedPack.extractedData||{}));
      data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
      const finalPack={...savedPack,extractedData:data};
-     await updatePack?.(finalPack);
+     const persistedConversation=await updatePack?.(finalPack);
+     if(!persistedConversation)notify?.("The agent replied, but the complete chat turn could not be saved. Reload and retry saving the pack.");
    }catch(error){
      const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
      const completed=[...conversationBefore,failed];
