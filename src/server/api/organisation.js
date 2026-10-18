@@ -244,13 +244,13 @@ async function createCustomer(req,res,auth){
 
 async function updateCustomer(req,res,auth){
   try{
-    if(!["manager","admin"].includes(String(auth.role||"").toLowerCase())){
+    const body=parseBody(req);
+    const strategyOnly=body.strategy!==undefined&&body.name===undefined&&body.code===undefined&&body.teamId===undefined;
+    if(!strategyOnly&&!["manager","admin"].includes(String(auth.role||"").toLowerCase())){
       return res.status(403).json({
-        error:"Manager or admin access required."
+        error:"Manager or admin access required to change customer details."
       });
     }
-
-    const body=parseBody(req);
 
     const customerId=String(body.customerId||"").trim();
 
