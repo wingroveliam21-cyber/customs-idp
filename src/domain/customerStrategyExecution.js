@@ -1,4 +1,5 @@
 const isMissing=value=>value===undefined||value===null||value==="";
+const cloneRecord=value=>JSON.parse(JSON.stringify(value||{}));
 
 const readPath=(object,path)=>String(path||"").split(".").filter(Boolean).reduce((value,key)=>value==null?undefined:value[key],object);
 const writePath=(object,path,value)=>{
@@ -21,7 +22,7 @@ export function customerStrategyRequiresApproval(strategy,action,field=null){
 }
 
 export function applyCustomerStrategyRules(inputRecord,strategy={}){
-  const record=structuredClone(inputRecord||{}),applications=[],changes=[],exceptions=[];
+  const record=cloneRecord(inputRecord),applications=[],changes=[],exceptions=[];
   for(const category of ["extractionRules","fieldRules"]){
     for(const [index,rule] of (Array.isArray(strategy[category])?strategy[category]:[]).entries()){
       if(!rule||typeof rule!=="object"||Array.isArray(rule)){applications.push(outcome(category,"unsupported","Rule is narrative text, not an executable structured rule.",{index,configuredRule:rule}));continue;}
