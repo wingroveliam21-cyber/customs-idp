@@ -41,3 +41,10 @@ test("validation exceptions and execution summary retain auditable counts",()=>{
   assert.equal(summary.exceptions.length,1);
   assert.equal(summary.exceptions[0].actual,"pending");
 });
+
+test("customer-specific approval requirements hold changes and report pending approval",()=>{
+  const result=applyCustomerStrategyRules({deliveryTerm:"EXW"},{approvalRequirements:[{action:"set_field",field:"deliveryTerm",required:true}],fieldRules:[{type:"set_field",field:"deliveryTerm",value:"DAP"}]});
+  assert.equal(result.record.deliveryTerm,"EXW");
+  assert.equal(result.applications[0].status,"pending_approval");
+  assert.equal(result.exceptions[0].status,"pending_approval");
+});
