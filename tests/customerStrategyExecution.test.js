@@ -12,7 +12,7 @@ test("applies configured field and copy-if-missing rules and audits source value
   });
   assert.equal(result.record.deliveryTerm,"DAP");
   assert.equal(result.record.sourceCountryOfDestination,"DE");
-  assert.equal(result.changes.length,2);
+  assert.equal(result.changes.length,3);
   assert.equal(result.applications.length,3);
 });
 
