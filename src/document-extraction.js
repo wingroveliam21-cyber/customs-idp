@@ -8,8 +8,17 @@ export async function extractDocument({fileData, filename, mimeType, customerStr
     const strategyInstructions=String(customerStrategy?.instructions||"").trim();
     const requiredFields=Array.isArray(customerStrategy?.requiredFields)?customerStrategy.requiredFields.filter(Boolean):[];
     const weightHandling=["ask_user","invoice","packing_list"].includes(customerStrategy?.weightHandling)?customerStrategy.weightHandling:"ask_user";
+    const structuredStrategyRules=customerStrategy?[
+      customerStrategy.totalInvoiceFromLines===true?"Working invoice total rule: calculate the working customs invoice total from the sum of item-line amounts. Preserve the original document total separately for audit; do not treat the original total as the working total.":null,
+      customerStrategy.lineCurrencyFromHeader===true?"Line currency rule: where line currency is absent, use the invoice header currency for each line. Do not overwrite an explicit different currency on a source line.":null,
+      customerStrategy.exporterAddress?"Exporter address rule: "+String(customerStrategy.exporterAddress):null,
+      customerStrategy.importerAddress?"Importer/consignee address rule: "+String(customerStrategy.importerAddress):null,
+      Array.isArray(customerStrategy.extractionRules)&&customerStrategy.extractionRules.length?"Extraction rules:\n- "+customerStrategy.extractionRules.map(rule=>typeof rule==="string"?rule:JSON.stringify(rule)).join("\n- "):null,
+      Array.isArray(customerStrategy.fieldRules)&&customerStrategy.fieldRules.length?"Field rules:\n- "+customerStrategy.fieldRules.map(rule=>typeof rule==="string"?rule:JSON.stringify(rule)).join("\n- "):null,
+      Array.isArray(customerStrategy.validationRules)&&customerStrategy.validationRules.length?"Customer validation rules:\n- "+customerStrategy.validationRules.map(rule=>typeof rule==="string"?rule:JSON.stringify(rule)).join("\n- "):null
+    ].filter(Boolean):[];
     const customerStrategyPrompt=customerStrategy
-      ? ["CUSTOMER-SPECIFIC STRATEGY:",strategyInstructions?"Processing instructions:\n"+strategyInstructions:"Processing instructions: none configured.",requiredFields.length?"Customer-required information:\n- "+requiredFields.join("\n- "):"Customer-required information: none configured.","Weight handling preference: "+weightHandling+".","Use these settings as customer context only. Do not invent missing values, silently transform source data, or perform weight apportionment during extraction."].join("\n")
+      ? ["CUSTOMER-SPECIFIC STRATEGY — APPLY THESE RULES, DO NOT MERELY DESCRIBE THEM:",strategyInstructions?"Processing instructions:\n"+strategyInstructions:"Processing instructions: none configured.",requiredFields.length?"Customer-required information:\n- "+requiredFields.join("\n- "):"Customer-required information: none configured.","Weight handling preference: "+weightHandling+".",...structuredStrategyRules,"Execution requirements: apply each relevant customer rule to the extracted/working data in this run; preserve source values separately when a rule changes a working value; record what was changed and why in warnings/audit metadata where the extraction schema supports it. Never invent unsupported values. Weight apportionment remains disabled during extraction unless the configured strategy explicitly enables automatic apportionment."]
       : "DEFAULT STRATEGY: No customer-specific strategy was found. Use the standard Customs IDP extraction instructions only.";
 
     const content = [
