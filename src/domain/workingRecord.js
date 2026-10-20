@@ -26,6 +26,15 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     };
 
     const merged={...invoice};
+    // Preserve the originally extracted invoice total before any customer strategy
+    // can replace the working total. This must survive even when line calculation
+    // cannot run or the pack has no separate invoice document.
+    const originalSourceInvoiceTotal = merged.sourceInvoiceTotal
+      ?? merged.totalInvoicedAmount
+      ?? merged.totalAmountInvoiced
+      ?? merged.totalInvoiceValue
+      ?? null;
+    if(merged.sourceInvoiceTotal===undefined) merged.sourceInvoiceTotal=originalSourceInvoiceTotal;
     const sourcePriority=Array.isArray(strategy?.sourcePriority)?strategy.sourcePriority.map(value=>String(value).toLowerCase()):[];
     const sourcePriorityChanges=[];
     const orderedSources=[...docs].sort((a,b)=>{const rank=doc=>{const type=String(doc?.extraction?.documentType||"").toLowerCase();const index=sourcePriority.indexOf(type);return index<0?Number.MAX_SAFE_INTEGER:index;};return rank(a)-rank(b);});
@@ -206,7 +215,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       const lineAmounts=mergedLines.map(line=>toNumber(line.totalValue??line.lineValue??line.unitValue));
       if(lineAmounts.every(value=>value!==null)){
         const calculatedTotal=Math.round(lineAmounts.reduce((sum,value)=>sum+value,0)*100)/100;
-        const sourceInvoiceTotal=merged.totalInvoicedAmount??merged.totalAmountInvoiced??merged.totalInvoiceValue??null;
+        const sourceInvoiceTotal=originalSourceInvoiceTotal;
         merged.sourceInvoiceTotal=sourceInvoiceTotal;
         merged.totalInvoicedAmount=calculatedTotal;
         merged.invoiceTotalRuleApplied={
