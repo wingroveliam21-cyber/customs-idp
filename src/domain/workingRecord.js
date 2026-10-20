@@ -1,11 +1,13 @@
 import { getCustomerStrategy, normalizeCountryCode } from "./packData.js";
+import { applyCustomerStrategyRules } from "./customerStrategyExecution.js";
 
 export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     const primary={...(pack?.extractedData||{})};
     const docs=Array.isArray(primary.documents)?primary.documents:[];
     const invoiceDoc=docs.find(d=>d?.extraction?.documentType==="commercial_invoice")||docs[0];
     const supportingDocs=docs.filter(d=>d&&d!==invoiceDoc);
-    if(!invoiceDoc)return primary;
+    const strategy=customerStrategy||getCustomerStrategy(pack?.customer);
+    if(!invoiceDoc){return applyCustomerStrategyRules(primary,strategy).record;}
 
     const invoice={...primary};
     const isMissing=v=>v===undefined||v===null||v==="";
@@ -24,6 +26,9 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     };
 
     const merged={...invoice};
+    const sourcePriority=Array.isArray(strategy?.sourcePriority)?strategy.sourcePriority.map(value=>String(value).toLowerCase()):[];
+    const sourcePriorityChanges=[];
+    const orderedSources=[...docs].sort((a,b)=>{const rank=doc=>{const type=String(doc?.extraction?.documentType||"").toLowerCase();const index=sourcePriority.indexOf(type);return index<0?Number.MAX_SAFE_INTEGER:index;};return rank(a)-rank(b);});
     const topLevelKeys=new Set();
     supportingDocs.forEach(doc=>{
       Object.keys(doc?.extraction||{}).forEach(key=>{
@@ -31,10 +36,15 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       });
     });
     topLevelKeys.forEach(key=>{
-      if(isMissing(merged[key])){
-        const value=supportingValues(key);
-        if(!isMissing(value))merged[key]=value;
+      if(sourcePriority.length){
+        const chosen=orderedSources.find(doc=>!isMissing(doc?.extraction?.[key]));
+        if(chosen){
+          const chosenValue=chosen.extraction[key],before=merged[key];
+          if(!isMissing(before)&&String(before)!==String(chosenValue))sourcePriorityChanges.push({field:key,before,after:chosenValue,sourceDocumentType:chosen.extraction.documentType||null,sourceDocumentId:chosen.id||null,sourceFilename:chosen.filename||null});
+          merged[key]=chosenValue;return;
+        }
       }
+      if(isMissing(merged[key])){const value=supportingValues(key);if(!isMissing(value))merged[key]=value;}
     });
 
     // Explicit aliases cover common naming differences between document types.
@@ -54,7 +64,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         if(!isMissing(value)){merged[target]=value;break;}
       }
     });
-    const strategy=customerStrategy||getCustomerStrategy(pack?.customer),eo=strategy?.customsSummaryExportField||strategy?.customsSummary?.exportField,di=strategy?.customsSummaryDestinationField||strategy?.customsSummary?.destinationField;
+    const eo=strategy?.customsSummaryExportField||strategy?.customsSummary?.exportField,di=strategy?.customsSummaryDestinationField||strategy?.customsSummary?.destinationField;
     if(eo&&!isMissing(merged[eo]))merged.countryOfExport=normalizeCountryCode(merged[eo]);else if(isMissing(merged.countryOfExport)&&!isMissing(merged.exporterCountryIso))merged.countryOfExport=normalizeCountryCode(merged.exporterCountryIso);
     if(di&&!isMissing(merged[di]))merged.sourceCountryOfDestination=normalizeCountryCode(merged[di]);else if(isMissing(merged.sourceCountryOfDestination)&&!isMissing(merged.consigneeCountryIso))merged.sourceCountryOfDestination=normalizeCountryCode(merged.consigneeCountryIso);
 
@@ -176,7 +186,18 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         };
       }
     }
-    merged.workingRecordSource="primary invoice + supporting documents";
-    merged.sourceDiscrepancies=sourceDiscrepancies;
-    return merged;
+    const execution=applyCustomerStrategyRules(merged,strategy);
+    const applications=[...(execution.record.customerStrategyApplications||[])];
+    if(sourcePriority.length)applications.unshift({
+      category:"sourcePriority",
+      status:sourcePriorityChanges.length?"applied":"no_change_needed",
+      summary:sourcePriorityChanges.length?"Configured source priority selected preferred document values.":"Source priority evaluated; no conflicting top-level values needed replacement.",
+      details:sourcePriorityChanges,
+      changes:sourcePriorityChanges
+    });
+    execution.record.customerStrategyApplications=applications;
+    execution.record.customerStrategyChanges=[...(execution.record.customerStrategyChanges||[]),...sourcePriorityChanges.map(change=>({...change,category:"sourcePriority",reason:"Configured customer source priority"}))];
+    execution.record.workingRecordSource="primary invoice + supporting documents";
+    execution.record.sourceDiscrepancies=sourceDiscrepancies;
+    return execution.record;
 }
