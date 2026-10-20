@@ -70,9 +70,9 @@ export function applyCustomerStrategyRules(inputRecord,strategy={}){
       }else applications.push(outcome(category,"unsupported","Validation type is not supported by the deterministic executor.",{index,configuredType:type||null,configuredRule:rule}));
     }
   }
-  record.customerStrategyApplications=[...(record.customerStrategyApplications||[]),...applications];
-  record.customerStrategyChanges=[...(record.customerStrategyChanges||[]),...changes];
-  record.customerStrategyExceptions=[...(record.customerStrategyExceptions||[]),...exceptions];
+  record.customerStrategyApplications=applications;
+  record.customerStrategyChanges=changes;
+  record.customerStrategyExceptions=exceptions;
   return {record,applications,changes,exceptions};
 }
 
