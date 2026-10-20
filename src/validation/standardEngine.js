@@ -48,6 +48,9 @@ export function validateStandardCustomsRecord(data={}){
   const fail=(...args)=>checks.push(result(...args));
   const pass=(...args)=>checks.push(result(...args));
   const review=(...args)=>checks.push(result(...args));
+  (Array.isArray(data.customerStrategyExceptions)?data.customerStrategyExceptions:[]).forEach((exception,index)=>{
+    review("Customer strategy exception",exception.field||exception.ruleType||"customerStrategy","review","",exception.expected||"",exception.message||"A customer strategy rule raised an exception.",{strategyCategory:exception.category||"customerStrategy",strategyRuleType:exception.ruleType||null,strategyExceptionIndex:index});
+  });
 
   const countryExport=normalizeCountryCode(data.countryOfExport||data.exporterCountryIso);
   const destination=normalizeCountryCode(data.sourceCountryOfDestination||data.countryOfDestination);
