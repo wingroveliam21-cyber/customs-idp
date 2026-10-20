@@ -6,6 +6,7 @@ test("customer source priority overrides conflicting top-level fields and record
   const pack={customer:"Example",extractedData:{
     invoiceNumber:"INV-1",
     currency:"GBP",
+    deliveryTerm:"EXW",
     documents:[
       {id:"inv",filename:"invoice.pdf",extraction:{documentType:"commercial_invoice",currency:"GBP",deliveryTerm:"EXW",lines:[]}},
       {id:"pl",filename:"packing.pdf",extraction:{documentType:"packing_list",deliveryTerm:"DAP",lines:[]}}
