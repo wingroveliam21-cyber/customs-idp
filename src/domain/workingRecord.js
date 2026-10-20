@@ -176,6 +176,56 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         };
       }
     }
+    // Record only strategy effects that the processing code can verify from the resulting record.
+    const customerStrategyApplications=[];
+    if(merged.invoiceTotalRuleApplied){
+      customerStrategyApplications.push({
+        rule:merged.invoiceTotalRuleApplied.rule,
+        status:"applied",
+        summary:"Working invoice total calculated from item-line amounts.",
+        details:"Working total "+merged.invoiceTotalRuleApplied.workingInvoiceTotal+"; original document total "+(merged.invoiceTotalRuleApplied.sourceInvoiceTotal??"not available")+" retained separately; "+merged.invoiceTotalRuleApplied.lineCount+" item lines included."
+      });
+    }
+    const apportionedLines=mergedLines.filter(line=>line?._weightApportionment);
+    if(apportionedLines.length){
+      customerStrategyApplications.push({
+        rule:"customer_weight_apportionment",
+        status:"applied",
+        summary:"Missing line-level weights apportioned using the configured line-value method.",
+        details:apportionedLines.length+" goods lines contain system-derived weight values."
+      });
+    }else if(strategy?.autoApplyWeightApportionment===true){
+      customerStrategyApplications.push({
+        rule:"customer_weight_apportionment",
+        status:"not_applied",
+        summary:"Automatic weight apportionment is enabled, but no apportionment was performed.",
+        details:"Required source totals or eligible line data were not available; no derived weights were recorded."
+      });
+    }
+    if(strategy?.lineCurrencyFromHeader===true){
+      const headerCurrency=merged.currency||merged.invoiceCurrency||null;
+      const linesWithCurrency=mergedLines.filter(line=>line?.currency||line?.lineCurrency);
+      const linesFilledFromHeader=[];
+      if(headerCurrency){
+        mergedLines.forEach(line=>{
+          if(line&&!(line.currency||line.lineCurrency)){
+            line.currency=headerCurrency;
+            line._customerStrategyApplied=line._customerStrategyApplied||[];
+            line._customerStrategyApplied.push("line_currency_from_header");
+            linesFilledFromHeader.push(line);
+          }
+        });
+      }
+      customerStrategyApplications.push({
+        rule:"customer_line_currency_from_header",
+        status:linesFilledFromHeader.length?"applied":headerCurrency?"no_change_needed":"not_applied",
+        summary:linesFilledFromHeader.length
+          ?"Filled missing line currencies from the invoice header currency."
+          :headerCurrency?"No missing line currencies needed filling.":"Could not fill line currencies because the invoice header currency was unavailable.",
+        details:"Header currency: "+(headerCurrency||"not available")+"; line currencies filled: "+linesFilledFromHeader.length+"."
+      });
+    }
+    merged.customerStrategyApplications=customerStrategyApplications;
     merged.workingRecordSource="primary invoice + supporting documents";
     merged.sourceDiscrepancies=sourceDiscrepancies;
     return merged;

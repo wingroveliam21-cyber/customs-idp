@@ -263,7 +263,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        type:"customsEntrySummary",
        summary:{
          invoice:value(invoice.invoiceNumber),exporter:value(invoice.exporter),consignee:value(invoice.consignee),
-         currency:value(invoice.currency),invoiceValue:value(invoice.totalInvoiceValue),exportCountry:value(invoice.countryOfExport),exporterAddress:value(invoice.exporterAddress),exporterAddressLine1:value(invoice.exporterAddressLine1),exporterPostcode:value(invoice.exporterPostcode),exporterCity:value(invoice.exporterCity),exporterCountryIso:value(invoice.exporterCountryIso),exporterEoriNo:value(invoice.exporterEoriNo),consigneeAddress:value(invoice.consigneeAddress),consigneeAddressLine1:value(invoice.consigneeAddressLine1),consigneePostcode:value(invoice.consigneePostcode),consigneeCity:value(invoice.consigneeCity),consigneeCountryIso:value(invoice.consigneeCountryIso),
+         currency:value(invoice.currency),invoiceValue:value(workingData.invoiceTotalRuleApplied?.workingInvoiceTotal??workingData.totalInvoicedAmount??invoice.totalInvoiceValue),sourceInvoiceValue:value(workingData.invoiceTotalRuleApplied?.sourceInvoiceTotal??workingData.sourceInvoiceTotal??invoice.totalInvoiceValue),invoiceTotalRuleApplied:workingData.invoiceTotalRuleApplied||null,exportCountry:value(invoice.countryOfExport),exporterAddress:value(invoice.exporterAddress),exporterAddressLine1:value(invoice.exporterAddressLine1),exporterPostcode:value(invoice.exporterPostcode),exporterCity:value(invoice.exporterCity),exporterCountryIso:value(invoice.exporterCountryIso),exporterEoriNo:value(invoice.exporterEoriNo),consigneeAddress:value(invoice.consigneeAddress),consigneeAddressLine1:value(invoice.consigneeAddressLine1),consigneePostcode:value(invoice.consigneePostcode),consigneeCity:value(invoice.consigneeCity),consigneeCountryIso:value(invoice.consigneeCountryIso),
          destination:value(invoice.sourceCountryOfDestination),packages:value(invoice.totalPackages),
          gross:value(selectedWeightSource==="packing_list"?(packingDoc?.extraction?.totalGrossWeight??invoice.totalGrossWeight):invoice.totalGrossWeight),
          net:value(selectedWeightSource==="packing_list"?(packingDoc?.extraction?.totalNetWeight??invoice.totalNetWeight):invoice.totalNetWeight),
@@ -275,6 +275,16 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        },
        persist:false
      },
+     ...(Array.isArray(workingData.customerStrategyApplications)&&workingData.customerStrategyApplications.length?[{
+       type:"strategyAppliedSummary",
+       text:"Customer strategy execution summary:\n"+workingData.customerStrategyApplications.map(application=>"- "+application.summary+" "+application.details+" Status: "+application.status+".").join("\n")+(workingData.invoiceTotalRuleApplied?"\nWorking invoice total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+". The original value is retained separately for audit.":""),
+       applications:workingData.customerStrategyApplications,
+       persist:false
+     }]:workingData.invoiceTotalRuleApplied?[{
+       type:"strategyAppliedSummary",
+       text:"Customer strategy applied automatically: "+workingData.invoiceTotalRuleApplied.explanation+" Working total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+". The original value is retained for audit; validation is based on the configured working total.",
+       persist:false
+     }]:[]),
      {type:"validationSummary",checks:Array.isArray(pack.validationChecks)?pack.validationChecks:validateStandardCustomsRecord(pack.workingRecord||pack.extractedData||{}).checks,persist:false},
      ...(shouldAskWeightApportionment?[{
        type:"weightApportionmentDecision",
@@ -607,6 +617,9 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    if(m.type==="weightDecision"){
      return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text">{m.text.split("\n").map((x,j)=><React.Fragment key={j}>{x}{j<m.text.split("\n").length-1&&<br/>}</React.Fragment>)}</div><div className="weight-decision-actions"><button className="secondary" onClick={()=>decideWeights("invoice",m.conflicts)}>Use Commercial Invoice weights</button><button className="secondary" onClick={()=>decideWeights("packing_list",m.conflicts)}>Use Packing List weights</button><button className="secondary" onClick={()=>emailCustomerReview()}><Mail size={15}/> Email customer</button></div></div></div>;
    }
+   if(m.type==="strategyAppliedSummary"){
+     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy applied automatically</b><div>{m.text}</div></div></div></div>;
+   }
    if(m.type==="customsEntrySummary"&&m.summary){
      const s=m.summary;
      const addressLines=(structured,fullAddress,fallback)=>{
@@ -659,7 +672,8 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
            <div className="customs-header-table">
              <div><span>Invoice number</span><b>{s.invoice||"—"}</b></div>
              <div><span>Currency</span><b>{s.currency||"—"}</b></div>
-             <div><span>Invoice Value</span><b>{s.invoiceValue?((s.currency||"")+" "+s.invoiceValue):"—"}</b></div>
+             <div><span>{s.invoiceTotalRuleApplied?"Working invoice total":"Invoice Value"}</span><b>{s.invoiceValue?((s.currency||"")+" "+s.invoiceValue):"—"}</b></div>
+             {s.invoiceTotalRuleApplied&&<div><span>Source invoice total (original document)</span><b>{s.sourceInvoiceValue?((s.currency||"")+" "+s.sourceInvoiceValue):"—"}</b></div>}
              <div><span>Export</span><b>{s.exportCountry||"—"}</b></div>
              <div><span>Destination</span><b>{s.destination||"—"}</b></div>
              <div><span>Packages</span><b>{s.packages||"—"}</b></div>
