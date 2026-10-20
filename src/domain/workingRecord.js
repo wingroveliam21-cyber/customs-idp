@@ -241,6 +241,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       });
     }
     execution.record.customerStrategyApplications=applications;
+    execution.record.customerStrategyExceptions=[...(execution.record.customerStrategyExceptions||[]),...strategyApplications.filter(application=>application.status==="pending_approval").map(application=>({category:application.category||"customerStrategy",ruleType:"approval_required",message:application.summary,severity:"approval_required"}))];
     execution.record.customerStrategyChanges=[...(execution.record.customerStrategyChanges||[]),...strategyChanges,...sourcePriorityChanges.map(change=>({...change,category:"sourcePriority",reason:"Configured customer source priority"}))];
     execution.record.workingRecordSource="primary invoice + supporting documents";
     execution.record.sourceDiscrepancies=sourceDiscrepancies;
