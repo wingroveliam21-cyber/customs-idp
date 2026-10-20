@@ -219,7 +219,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    const exportCountry=value(invoice.countryOfExport).trim().toUpperCase();
    const exporterCountryIso=value(invoice.exporterCountryIso).trim().toUpperCase();
    const exporterAddress=value(invoice.exporterAddress);
-   const isGBExporter=exportCountry==="GB"||exporterCountryIso==="GB"||/(?:^|[\\n, ])(?:GB|UK|UNITED KINGDOM)(?:$|[\\n, ])/i.test(exporterAddress);
+   const isGBExporter=exportCountry==="GB"||exporterCountryIso==="GB"||/(?:^|[\n, ])(?:GB|UK|UNITED KINGDOM)(?:$|[\n, ])/i.test(exporterAddress);
    const agentIssues=[];
    if(isGBExporter&&!hasValue(invoice.exporterEoriNo)){
      agentIssues.push({
@@ -277,12 +277,9 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      },
      ...(Array.isArray(workingData.customerStrategyApplications)&&workingData.customerStrategyApplications.length?[{
        type:"strategyAppliedSummary",
-       text:"Customer strategy execution summary:\n"+workingData.customerStrategyApplications.map(application=>"- "+application.summary+" "+application.details+" Status: "+application.status+".").join("\n")+(workingData.invoiceTotalRuleApplied?"\nWorking invoice total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+". The original value is retained separately for audit.":""),
-       applications:workingData.customerStrategyApplications,
-       persist:false
-     }]:workingData.invoiceTotalRuleApplied?[{
-       type:"strategyAppliedSummary",
-       text:"Customer strategy applied automatically: "+workingData.invoiceTotalRuleApplied.explanation+" Working total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+". The original value is retained for audit; validation is based on the configured working total.",
+       text:"Customer strategy execution report:\n"+workingData.customerStrategyApplications.map(application=>"- ["+String(application.status||"unknown").toUpperCase()+"] "+(application.summary||application.rule||application.category||"Rule evaluated")+(application.details?": "+(typeof application.details==="string"?application.details:JSON.stringify(application.details)):"")).join("\n")+
+         "\nChanges recorded: "+(workingData.customerStrategyChanges||[]).length+"; exceptions raised: "+(workingData.customerStrategyExceptions||[]).length+". Unsupported rules are explicitly reported and require configuration or implementation before they can be considered applied."+
+         (workingData.invoiceTotalRuleApplied?"\nWorking invoice total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+".":""),
        persist:false
      }]:[]),
      {type:"validationSummary",checks:Array.isArray(pack.validationChecks)?pack.validationChecks:validateStandardCustomsRecord(pack.workingRecord||pack.extractedData||{}).checks,persist:false},
@@ -574,17 +571,17 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    const displayValue=v=>v===undefined||v===null||v===""?"—":String(v);
    const sections=[];
    if(missing.length){
-     sections.push("MISSING INFORMATION\\n\\n"+missing.map(check=>"- "+(check.label||check.check||"Required information")+": "+(check.detail||"Missing from the supplied documents.")).join("\\n"));
+     sections.push("MISSING INFORMATION\n\n"+missing.map(check=>"- "+(check.label||check.check||"Required information")+": "+(check.detail||"Missing from the supplied documents.")).join("\n"));
    }
    if(conflicts.length){
-     sections.push("WEIGHT DISCREPANCY\\n\\nThe Commercial Invoice and Packing List contain different line-level weights. Please confirm which weights should be used for the customs declaration.\\n\\n"+conflicts.map(c=>"- "+(c.invoice.description||"Goods line")+": Commercial Invoice net "+displayValue(c.invoice.netMassKg)+" kg / gross "+displayValue(c.invoice.grossMassKg)+" kg; Packing List net "+displayValue(c.line.netMassKg)+" kg / gross "+displayValue(c.line.grossMassKg)+" kg.").join("\\n"));
+     sections.push("WEIGHT DISCREPANCY\n\nThe Commercial Invoice and Packing List contain different line-level weights. Please confirm which weights should be used for the customs declaration.\n\n"+conflicts.map(c=>"- "+(c.invoice.description||"Goods line")+": Commercial Invoice net "+displayValue(c.invoice.netMassKg)+" kg / gross "+displayValue(c.invoice.grossMassKg)+" kg; Packing List net "+displayValue(c.line.netMassKg)+" kg / gross "+displayValue(c.line.grossMassKg)+" kg.").join("\n"));
    }
    const subject=missing.length&&conflicts.length
      ?"Customs IDP - information and weight confirmation required"
      :missing.length
        ?"Customs IDP - missing information required"
        :"Customs IDP - weight confirmation required";
-   const body="Hello,\\n\\nWe are preparing your customs declaration and need the following information/confirmation before we can complete it.\\n\\n"+sections.join("\\n\\n")+"\\n\\nPlease provide the missing information and/or confirm the correct weights so we can complete the customs declaration.\\n\\nRegards\\nCustoms IDP";
+   const body="Hello,\n\nWe are preparing your customs declaration and need the following information/confirmation before we can complete it.\n\n"+sections.join("\n\n")+"\n\nPlease provide the missing information and/or confirm the correct weights so we can complete the customs declaration.\n\nRegards\nCustoms IDP";
    setEmailDraft({to:"",subject,body});
  };
  const renderMessage=(m,i)=>{
@@ -618,13 +615,13 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text">{m.text.split("\n").map((x,j)=><React.Fragment key={j}>{x}{j<m.text.split("\n").length-1&&<br/>}</React.Fragment>)}</div><div className="weight-decision-actions"><button className="secondary" onClick={()=>decideWeights("invoice",m.conflicts)}>Use Commercial Invoice weights</button><button className="secondary" onClick={()=>decideWeights("packing_list",m.conflicts)}>Use Packing List weights</button><button className="secondary" onClick={()=>emailCustomerReview()}><Mail size={15}/> Email customer</button></div></div></div>;
    }
    if(m.type==="strategyAppliedSummary"){
-     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy applied automatically</b><div>{m.text}</div></div></div></div>;
+     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy execution report</b><div>{m.text}</div></div></div></div>;
    }
    if(m.type==="customsEntrySummary"&&m.summary){
      const s=m.summary;
      const addressLines=(structured,fullAddress,fallback)=>{
        const raw=structured||fullAddress||"";
-       const lines=String(raw).split(/,|\\n/).map(x=>x.trim()).filter(Boolean);
+       const lines=String(raw).split(/,|\n/).map(x=>x.trim()).filter(Boolean);
        return lines.length?lines:[fallback];
      };
      const renderAddress=(structured,fullAddress,fallback)=>{
