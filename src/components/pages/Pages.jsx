@@ -275,7 +275,12 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        },
        persist:false
      },
-     ...(workingData.invoiceTotalRuleApplied?[{
+     ...(Array.isArray(workingData.customerStrategyApplications)&&workingData.customerStrategyApplications.length?[{
+       type:"strategyAppliedSummary",
+       text:"Customer strategy execution summary:\n"+workingData.customerStrategyApplications.map(application=>"- "+application.summary+" "+application.details+" Status: "+application.status+".").join("\n")+(workingData.invoiceTotalRuleApplied?"\nWorking invoice total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+". The original value is retained separately for audit.":""),
+       applications:workingData.customerStrategyApplications,
+       persist:false
+     }]:workingData.invoiceTotalRuleApplied?[{
        type:"strategyAppliedSummary",
        text:"Customer strategy applied automatically: "+workingData.invoiceTotalRuleApplied.explanation+" Working total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+". The original value is retained for audit; validation is based on the configured working total.",
        persist:false
