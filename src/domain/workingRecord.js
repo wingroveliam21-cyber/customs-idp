@@ -1,5 +1,5 @@
 import { getCustomerStrategy, normalizeCountryCode } from "./packData.js";
-import { applyCustomerStrategyRules } from "./customerStrategyExecution.js";
+import { applyCustomerStrategyRules, customerStrategyRequiresApproval } from "./customerStrategyExecution.js";
 
 export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     const primary={...(pack?.extractedData||{})};
@@ -36,7 +36,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       });
     });
     topLevelKeys.forEach(key=>{
-      if(sourcePriority.length){
+      if(sourcePriority.length&&!customerStrategyRequiresApproval(strategy,"source_priority",key)){
         const chosen=orderedSources.find(doc=>!isMissing(doc?.extraction?.[key]));
         if(chosen){
           const chosenValue=chosen.extraction[key],before=merged[key];
@@ -108,7 +108,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       return mergedLine;
     });
 
-    if(["invoice","packing_list"].includes(strategy?.weightHandling)){
+    if(["invoice","packing_list"].includes(strategy?.weightHandling)&&!customerStrategyRequiresApproval(strategy,"weight_handling")){
       const preferredType=strategy.weightHandling==="packing_list"?"packing_list":"commercial_invoice";
       const preferredDoc=docs.find(doc=>doc?.extraction?.documentType===preferredType)|| (preferredType==="packing_list"?supportingDocs.find(doc=>/packing/i.test(doc?.filename||"")):invoiceDoc);
       let changed=0;
@@ -149,7 +149,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         : mergedLines.map(()=>1);
     const basisTotal=basis.reduce((sum,v)=>sum+(v||0),0);
 
-    const weightApportionmentApproved = pack?.extractedData?.weightApportionmentDecision?.status==="approved" || strategy?.autoApplyWeightApportionment===true;
+    const weightApportionmentApproved = pack?.extractedData?.weightApportionmentDecision?.status==="approved" || (strategy?.autoApplyWeightApportionment===true&&!customerStrategyRequiresApproval(strategy,"weight_apportionment"));
     if(weightApportionmentApproved && ((allNetMissing&&totalNetForApportion!==null&&basisTotal>0)||(allGrossMissing&&totalGrossForApportion!==null&&basisTotal>0))){
       const apportioned=mergedLines.map(line=>({...line}));
 
@@ -193,7 +193,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     const strategyInstructions=String(strategy?.instructions||"");
     const totalFromLines= strategy?.totalInvoiceFromLines===true
       || /(?:always\s+use|use|calculate|set|derive)[^.!?]{0,100}(?:sum|total)[^.!?]{0,100}(?:item[- ]line|line[- ]item|goods[- ]line)[^.!?]{0,100}(?:amount|value)|(?:item[- ]line|line[- ]item|goods[- ]line)[^.!?]{0,100}(?:sum|total)[^.!?]{0,100}(?:working\s+)?invoice\s+total/i.test(strategyInstructions);
-    if(totalFromLines && mergedLines.length>0){
+    if(totalFromLines && mergedLines.length>0&&!customerStrategyRequiresApproval(strategy,"invoice_total")){
       const lineAmounts=mergedLines.map(line=>toNumber(line.totalValue??line.lineValue??line.unitValue));
       if(lineAmounts.every(value=>value!==null)){
         const calculatedTotal=Math.round(lineAmounts.reduce((sum,value)=>sum+value,0)*100)/100;
@@ -213,6 +213,17 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     const apportionedLines=mergedLines.filter(line=>line?._weightApportionment);
     if(apportionedLines.length)strategyApplications.push({category:"weightApportionment",status:"applied",summary:"Document-level weights apportioned across goods lines.",details:{lines:apportionedLines.length,method:"line value, then quantity, then equal allocation"}});
     else if(strategy?.autoApplyWeightApportionment===true)strategyApplications.push({category:"weightApportionment",status:"not_applied",summary:"Automatic weight apportionment is enabled but could not be applied.",details:{reason:"Missing eligible source totals or line allocation basis"}});
+    if(customerStrategyRequiresApproval(strategy,"invoice_total")&&totalFromLines)strategyApplications.push({category:"invoiceTotal",status:"pending_approval",summary:"Invoice-total rule is configured but held for customer-specific approval.",details:{required:true}});
+    if(customerStrategyRequiresApproval(strategy,"weight_handling")&&["invoice","packing_list"].includes(strategy?.weightHandling))strategyApplications.push({category:"weightHandling",status:"pending_approval",summary:"Weight-source selection is held for customer-specific approval.",details:{configuredSource:strategy.weightHandling}});
+    if(customerStrategyRequiresApproval(strategy,"weight_apportionment")&&strategy?.autoApplyWeightApportionment===true)strategyApplications.push({category:"weightApportionment",status:"pending_approval",summary:"Automatic weight apportionment is held for customer-specific approval.",details:{required:true}});
+    if(strategy?.lineCurrencyFromHeader===true){
+      const headerCurrency=merged.currency||merged.invoiceCurrency||null;
+      let filled=0;
+      if(headerCurrency&&!customerStrategyRequiresApproval(strategy,"line_currency_from_header")){
+        mergedLines.forEach(line=>{if(line&&isMissing(line.currency)&&isMissing(line.lineCurrency)){line.currency=headerCurrency;line._customerStrategyApplied=[...(line._customerStrategyApplied||[]),"line_currency_from_header"];filled++;}});
+        strategyApplications.push({category:"lineCurrencyFromHeader",status:filled?"applied":"no_change_needed",summary:filled?"Filled missing line currencies from header currency.":"No missing line currencies needed filling.",details:{headerCurrency,linesChanged:filled}});
+      }else strategyApplications.push({category:"lineCurrencyFromHeader",status:headerCurrency?"pending_approval":"not_applied",summary:headerCurrency?"Header currency rule is held for approval.":"Header currency is unavailable; line currency rule could not be applied.",details:{headerCurrency}});
+    }
     const execution=applyCustomerStrategyRules(merged,strategy);
     const applications=[...strategyApplications,...(execution.record.customerStrategyApplications||[])];
     if(sourcePriority.length)applications.unshift({
