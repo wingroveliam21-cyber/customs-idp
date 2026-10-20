@@ -32,7 +32,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     const topLevelKeys=new Set();
     supportingDocs.forEach(doc=>{
       Object.keys(doc?.extraction||{}).forEach(key=>{
-        if(key!=="lines"&&key!=="documents"&&key!=="sourceDocuments"&&key!=="agentMessages")topLevelKeys.add(key);
+        if(!["lines","documents","sourceDocuments","agentMessages","documentType","filename","id","sourceDocumentId","sourceLabel","pageCount","confidence","evidence"].includes(key))topLevelKeys.add(key);
       });
     });
     topLevelKeys.forEach(key=>{
