@@ -176,6 +176,46 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         };
       }
     }
+    // Record only strategy effects that the processing code can verify from the resulting record.
+    const customerStrategyApplications=[];
+    if(merged.invoiceTotalRuleApplied){
+      customerStrategyApplications.push({
+        rule:merged.invoiceTotalRuleApplied.rule,
+        status:"applied",
+        summary:"Working invoice total calculated from item-line amounts.",
+        details:"Working total "+merged.invoiceTotalRuleApplied.workingInvoiceTotal+"; original document total "+(merged.invoiceTotalRuleApplied.sourceInvoiceTotal??"not available")+" retained separately; "+merged.invoiceTotalRuleApplied.lineCount+" item lines included."
+      });
+    }
+    const apportionedLines=mergedLines.filter(line=>line?._weightApportionment);
+    if(apportionedLines.length){
+      customerStrategyApplications.push({
+        rule:"customer_weight_apportionment",
+        status:"applied",
+        summary:"Missing line-level weights apportioned using the configured line-value method.",
+        details:apportionedLines.length+" goods lines contain system-derived weight values."
+      });
+    }else if(strategy?.autoApplyWeightApportionment===true){
+      customerStrategyApplications.push({
+        rule:"customer_weight_apportionment",
+        status:"not_applied",
+        summary:"Automatic weight apportionment is enabled, but no apportionment was performed.",
+        details:"Required source totals or eligible line data were not available; no derived weights were recorded."
+      });
+    }
+    if(strategy?.lineCurrencyFromHeader===true){
+      const headerCurrency=merged.currency||merged.invoiceCurrency||null;
+      const linesWithCurrency=mergedLines.filter(line=>line?.currency||line?.lineCurrency);
+      const linesFilledFromHeader=mergedLines.filter(line=>!(line?.currency||line?.lineCurrency)&&headerCurrency);
+      customerStrategyApplications.push({
+        rule:"customer_line_currency_from_header",
+        status:linesFilledFromHeader.length?"configured_but_not_applied":"no_change_needed",
+        summary:linesFilledFromHeader.length
+          ?"Header-currency rule is configured, but missing line currencies were not filled by the working-record builder."
+          :"No missing line currencies were detected for this rule.",
+        details:"Header currency: "+(headerCurrency||"not available")+"; lines already carrying currency: "+linesWithCurrency.length+"."
+      });
+    }
+    merged.customerStrategyApplications=customerStrategyApplications;
     merged.workingRecordSource="primary invoice + supporting documents";
     merged.sourceDiscrepancies=sourceDiscrepancies;
     return merged;
