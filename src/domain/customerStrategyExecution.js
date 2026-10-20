@@ -10,19 +10,23 @@ const writePath=(object,path,value)=>{
 };
 const outcome=(category,status,summary,extra={})=>({category,status,summary,...extra});
 
+export function customerStrategyRequiresApproval(strategy,action,field=null){
+  const requirements=Array.isArray(strategy?.approvalRequirements)?strategy.approvalRequirements:[];
+  return requirements.some(requirement=>{
+    if(!requirement||typeof requirement!=="object"||requirement.required===false)return false;
+    const configuredAction=String(requirement.action||requirement.type||requirement.category||"").toLowerCase();
+    const configuredField=requirement.field||requirement.targetField;
+    return (!configuredAction||configuredAction===String(action||"").toLowerCase())&&(!configuredField||configuredField===field);
+  });
+}
+
 export function applyCustomerStrategyRules(inputRecord,strategy={}){
   const record=structuredClone(inputRecord||{}),applications=[],changes=[],exceptions=[];
   for(const category of ["extractionRules","fieldRules"]){
     for(const [index,rule] of (Array.isArray(strategy[category])?strategy[category]:[]).entries()){
       if(!rule||typeof rule!=="object"||Array.isArray(rule)){applications.push(outcome(category,"unsupported","Rule is narrative text, not an executable structured rule.",{index,configuredRule:rule}));continue;}
       const type=String(rule.type||rule.action||"").toLowerCase(),field=rule.field||rule.targetField||rule.target;
-      const approvalRules=Array.isArray(strategy.approvalRequirements)?strategy.approvalRequirements:[];
-      const requiresApproval=rule.requiresApproval===true||approvalRules.some(requirement=>{
-        if(!requirement||typeof requirement!=="object"||requirement.required===false)return false;
-        const action=String(requirement.action||requirement.type||"").toLowerCase();
-        const requiredField=requirement.field||requirement.targetField;
-        return (!action||action===type)&&(!requiredField||requiredField===field);
-      });
+      const requiresApproval=rule.requiresApproval===true||customerStrategyRequiresApproval(strategy,type,field);
       if(requiresApproval&&["set_field","copy_if_missing","map_value"].includes(type)){
         const exception={category,ruleType:type,field:field||null,message:rule.approvalMessage||"Customer strategy requires approval before this change can be applied.",severity:"approval_required",status:"pending_approval"};
         exceptions.push(exception);
