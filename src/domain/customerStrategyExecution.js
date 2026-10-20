@@ -56,6 +56,11 @@ export function applyCustomerStrategyRules(inputRecord,strategy={}){
     if(isMissing(readPath(record,field))){exceptions.push({category:"requiredFields",field,message:"Required customer field is missing: "+field,severity:"review"});applications.push(outcome("requiredFields","exception","Required customer field is missing.",{field}));}
     else applications.push(outcome("requiredFields","passed","Required customer field is present.",{field}));
   }
+  for(const [index,requirement] of (Array.isArray(strategy.approvalRequirements)?strategy.approvalRequirements:[]).entries()){
+    if(!requirement||typeof requirement!=="object"||Array.isArray(requirement)){
+      applications.push(outcome("approvalRequirements","unsupported","Approval requirement must be a structured JSON object; it was not enforced.",{index,configuredRule:requirement}));
+    }
+  }
   for(const category of ["validationRules","customValidations"]){
     for(const [index,rule] of (Array.isArray(strategy[category])?strategy[category]:[]).entries()){
       if(!rule||typeof rule!=="object"||Array.isArray(rule)){applications.push(outcome(category,"unsupported","Validation rule is not a structured rule object.",{index,configuredRule:rule}));continue;}
