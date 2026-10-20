@@ -40,7 +40,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         const chosen=orderedSources.find(doc=>!isMissing(doc?.extraction?.[key]));
         if(chosen){
           const chosenValue=chosen.extraction[key],before=merged[key];
-          if(!isMissing(before)&&String(before)!==String(chosenValue))sourcePriorityChanges.push({field:key,before,after:chosenValue,sourceDocumentType:chosen.extraction.documentType||null,sourceDocumentId:chosen.id||null,sourceFilename:chosen.filename||null});
+          if(String(before??"")!==String(chosenValue??""))sourcePriorityChanges.push({field:key,before:before??null,after:chosenValue,sourceDocumentType:chosen.extraction.documentType||null,sourceDocumentId:chosen.id||null,sourceFilename:chosen.filename||null});
           merged[key]=chosenValue;return;
         }
       }
