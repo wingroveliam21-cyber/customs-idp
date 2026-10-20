@@ -232,13 +232,25 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     const applications=[...strategyApplications,...(execution.record.customerStrategyApplications||[])];
     if(sourcePriority.length){
       const approvalRequired=customerStrategyRequiresApproval(strategy,"source_priority");
+      const availableTypes=docs.map(doc=>String(doc?.extraction?.documentType||"").toLowerCase());
+      const missingPriorityTypes=sourcePriority.filter(type=>!availableTypes.includes(type));
+      const status=approvalRequired?"pending_approval":sourcePriorityChanges.length?"applied":missingPriorityTypes.length?"not_applied":"no_change_needed";
       applications.unshift({
         category:"sourcePriority",
-        status:approvalRequired?"pending_approval":sourcePriorityChanges.length?"applied":"no_change_needed",
-        summary:approvalRequired?"Source-priority overrides are held for customer-specific approval.":sourcePriorityChanges.length?"Configured source priority selected preferred document values.":"Source priority evaluated; no conflicting top-level values needed replacement.",
-        details:{scope:"top-level fields only; line-level conflict resolution remains separately audited",changes:sourcePriorityChanges},
+        status,
+        summary:approvalRequired?"Source-priority overrides are held for customer-specific approval.":sourcePriorityChanges.length?"Configured source priority selected preferred document values.":missingPriorityTypes.length?"One or more configured priority document types were not present in this pack.":"Source priority evaluated; no conflicting top-level values needed replacement.",
+        details:{scope:"top-level fields only; line-level conflict resolution is not yet implemented",missingPriorityTypes,changes:sourcePriorityChanges},
         changes:sourcePriorityChanges
       });
+    }
+    for(const [category,sourceField,targetField] of [
+      ["customsSummaryExportField",strategy?.customsSummaryExportField,"countryOfExport"],
+      ["customsSummaryDestinationField",strategy?.customsSummaryDestinationField,"sourceCountryOfDestination"]
+    ]){
+      if(sourceField){
+        const sourceValue=merged[sourceField];
+        applications.push({category,status:isMissing(sourceValue)?"not_applied":"applied",summary:isMissing(sourceValue)?"Configured customs-summary source field was missing.":"Configured customs-summary source field was mapped to the working customs field.",details:{sourceField,targetField,sourceValue:sourceValue??null}});
+      }
     }
     execution.record.customerStrategyApplications=applications;
     execution.record.customerStrategyExceptions=[...(execution.record.customerStrategyExceptions||[]),...strategyApplications.filter(application=>application.status==="pending_approval").map(application=>({category:application.category||"customerStrategy",ruleType:"approval_required",message:application.summary,severity:"approval_required"}))];
