@@ -1009,8 +1009,8 @@ function StrategySection({
           </div>
           <textarea
             className="strategy-v1-textarea"
-            value={(strategy.approvalRequirements||[]).map(rule=>typeof rule==="string"?rule:JSON.stringify(rule)).join("\\n")}
-            onChange={event=>setStrategy(current=>({...current,approvalRequirements:event.target.value.split("\\n").map(value=>value.trim()).filter(Boolean).map(value=>{try{return JSON.parse(value);}catch{return value;}})}))}
+            value={(strategy.approvalRequirements||[]).map(rule=>typeof rule==="string"?rule:JSON.stringify(rule)).join("\n")}
+            onChange={event=>setStrategy(current=>({...current,approvalRequirements:event.target.value.split("\n").map(value=>value.trim()).filter(Boolean).map(value=>{try{return JSON.parse(value);}catch{return value;}})}))}
             placeholder={'One JSON rule per line, e.g. {"action":"set_field","field":"deliveryTerm","required":true}'}
             rows={3}
             aria-label="Customer-specific approval requirements"
