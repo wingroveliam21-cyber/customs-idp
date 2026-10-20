@@ -82,6 +82,8 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     };
 
     const sourceDiscrepancies=[];
+    const strategyApplications=[];
+    const strategyChanges=[];
     const mergedLines=invoiceLines.map((invLine,lineIndex)=>{
       const mergedLine={...invLine};
       for(const source of supportingLineSets){
@@ -105,6 +107,27 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       }
       return mergedLine;
     });
+
+    if(["invoice","packing_list"].includes(strategy?.weightHandling)){
+      const preferredType=strategy.weightHandling==="packing_list"?"packing_list":"commercial_invoice";
+      const preferredDoc=docs.find(doc=>doc?.extraction?.documentType===preferredType)|| (preferredType==="packing_list"?supportingDocs.find(doc=>/packing/i.test(doc?.filename||"")):invoiceDoc);
+      let changed=0;
+      if(preferredDoc){
+        mergedLines.forEach((line,index)=>{
+          const sourceLine=preferredDoc===invoiceDoc?invoiceLines[index]:findMatch(invoiceLines[index]||line,Array.isArray(preferredDoc?.extraction?.lines)?preferredDoc.extraction.lines:[]);
+          if(!sourceLine)return;
+          for(const [target,keys] of [["netMassKg",["netMassKg","netWeight","netMass"]],["grossMassKg",["grossMassKg","grossWeight","grossMass"]]]){
+            const sourceKey=keys.find(key=>!isMissing(sourceLine[key]));
+            if(!sourceKey)continue;
+            const before=line[target]??keys.map(key=>line[key]).find(value=>!isMissing(value));
+            const after=sourceLine[sourceKey];
+            if(!isMissing(before)&&String(before)!==String(after))strategyChanges.push({category:"weightHandling",field:target,lineIndex:index,before,after,sourceDocumentType:preferredDoc.extraction?.documentType||null,sourceFilename:preferredDoc.filename||null,reason:"Configured customer weight source"});
+            if(isMissing(before)||String(before)!==String(after)){line[target]=after;line._customerStrategyApplied=line._customerStrategyApplied||[];line._customerStrategyApplied.push("weight_source:"+preferredType);changed++;}
+          }
+        });
+        strategyApplications.push({category:"weightHandling",status:changed?"applied":"no_change_needed",summary:changed?"Applied the configured weight source to working goods lines.":"Configured weight source was evaluated; no line weights needed changing.",details:{preferredSource:preferredType,changedValues:changed}});
+      }else strategyApplications.push({category:"weightHandling",status:"not_applied",summary:"Configured weight source was not available in this pack.",details:{preferredSource:preferredType}});
+    }
 
     // If only document-level totals are available, derive line weights using
     // the established apportionment rule rather than treating the lines as missing.
@@ -186,8 +209,12 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         };
       }
     }
+    if(merged.invoiceTotalRuleApplied)strategyApplications.push({category:"invoiceTotal",status:"applied",summary:"Working invoice total calculated from item-line amounts.",details:{workingTotal:merged.invoiceTotalRuleApplied.workingInvoiceTotal,sourceTotal:merged.invoiceTotalRuleApplied.sourceInvoiceTotal,lineCount:merged.invoiceTotalRuleApplied.lineCount}});
+    const apportionedLines=mergedLines.filter(line=>line?._weightApportionment);
+    if(apportionedLines.length)strategyApplications.push({category:"weightApportionment",status:"applied",summary:"Document-level weights apportioned across goods lines.",details:{lines:apportionedLines.length,method:"line value, then quantity, then equal allocation"}});
+    else if(strategy?.autoApplyWeightApportionment===true)strategyApplications.push({category:"weightApportionment",status:"not_applied",summary:"Automatic weight apportionment is enabled but could not be applied.",details:{reason:"Missing eligible source totals or line allocation basis"}});
     const execution=applyCustomerStrategyRules(merged,strategy);
-    const applications=[...(execution.record.customerStrategyApplications||[])];
+    const applications=[...strategyApplications,...(execution.record.customerStrategyApplications||[])];
     if(sourcePriority.length)applications.unshift({
       category:"sourcePriority",
       status:sourcePriorityChanges.length?"applied":"no_change_needed",
@@ -196,7 +223,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       changes:sourcePriorityChanges
     });
     execution.record.customerStrategyApplications=applications;
-    execution.record.customerStrategyChanges=[...(execution.record.customerStrategyChanges||[]),...sourcePriorityChanges.map(change=>({...change,category:"sourcePriority",reason:"Configured customer source priority"}))];
+    execution.record.customerStrategyChanges=[...(execution.record.customerStrategyChanges||[]),...strategyChanges,...sourcePriorityChanges.map(change=>({...change,category:"sourcePriority",reason:"Configured customer source priority"}))];
     execution.record.workingRecordSource="primary invoice + supporting documents";
     execution.record.sourceDiscrepancies=sourceDiscrepancies;
     return execution.record;
