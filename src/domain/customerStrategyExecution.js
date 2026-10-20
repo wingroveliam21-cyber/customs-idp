@@ -17,7 +17,7 @@ export function customerStrategyRequiresApproval(strategy,action,field=null){
     if(!requirement||typeof requirement!=="object"||requirement.required===false)return false;
     const configuredAction=String(requirement.action||requirement.type||requirement.category||"").toLowerCase();
     const configuredField=requirement.field||requirement.targetField;
-    return (!configuredAction||configuredAction===String(action||"").toLowerCase())&&(!configuredField||configuredField===field);
+    return (!configuredAction||configuredAction===String(action||"").toLowerCase())&&(!configuredField||!field||configuredField===field);
   });
 }
 
