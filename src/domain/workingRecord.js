@@ -37,7 +37,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     });
     topLevelKeys.forEach(key=>{
       if(sourcePriority.length&&!customerStrategyRequiresApproval(strategy,"source_priority",key)){
-        const chosen=orderedSources.find(doc=>!isMissing(doc?.extraction?.[key]));
+        const chosen=orderedSources.find(doc=>sourcePriority.includes(String(doc?.extraction?.documentType||"").toLowerCase())&&!isMissing(doc?.extraction?.[key]));
         if(chosen){
           const chosenValue=chosen.extraction[key],before=merged[key];
           if(String(before??"")!==String(chosenValue??""))sourcePriorityChanges.push({field:key,before:before??null,after:chosenValue,sourceDocumentType:chosen.extraction.documentType||null,sourceDocumentId:chosen.id||null,sourceFilename:chosen.filename||null});
