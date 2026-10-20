@@ -205,14 +205,24 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     if(strategy?.lineCurrencyFromHeader===true){
       const headerCurrency=merged.currency||merged.invoiceCurrency||null;
       const linesWithCurrency=mergedLines.filter(line=>line?.currency||line?.lineCurrency);
-      const linesFilledFromHeader=mergedLines.filter(line=>!(line?.currency||line?.lineCurrency)&&headerCurrency);
+      const linesFilledFromHeader=[];
+      if(headerCurrency){
+        mergedLines.forEach(line=>{
+          if(line&&!(line.currency||line.lineCurrency)){
+            line.currency=headerCurrency;
+            line._customerStrategyApplied=line._customerStrategyApplied||[];
+            line._customerStrategyApplied.push("line_currency_from_header");
+            linesFilledFromHeader.push(line);
+          }
+        });
+      }
       customerStrategyApplications.push({
         rule:"customer_line_currency_from_header",
-        status:linesFilledFromHeader.length?"configured_but_not_applied":"no_change_needed",
+        status:linesFilledFromHeader.length?"applied":headerCurrency?"no_change_needed":"not_applied",
         summary:linesFilledFromHeader.length
-          ?"Header-currency rule is configured, but missing line currencies were not filled by the working-record builder."
-          :"No missing line currencies were detected for this rule.",
-        details:"Header currency: "+(headerCurrency||"not available")+"; lines already carrying currency: "+linesWithCurrency.length+"."
+          ?"Filled missing line currencies from the invoice header currency."
+          :headerCurrency?"No missing line currencies needed filling.":"Could not fill line currencies because the invoice header currency was unavailable.",
+        details:"Header currency: "+(headerCurrency||"not available")+"; line currencies filled: "+linesFilledFromHeader.length+"."
       });
     }
     merged.customerStrategyApplications=customerStrategyApplications;
