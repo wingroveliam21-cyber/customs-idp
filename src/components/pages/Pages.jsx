@@ -387,19 +387,21 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
    const thinking={type:"agent",text:"I'm checking the uploaded documents and their source evidence...",persist:false};
    const conversationBefore=[...messages,userMessage];
    setIsSending(true);setMessages([...conversationBefore,thinking]);setChat("");
+   let workingPack=pack;
    try{
-     // Persist the user's turn before waiting for the model so a refresh or timeout cannot lose it.
-     const interimData=JSON.parse(JSON.stringify(pack.extractedData||{}));
+     // Save the user's turn first, then use the returned database version for every subsequent write.
+     const interimData=JSON.parse(JSON.stringify(workingPack.extractedData||{}));
      interimData.agentMessages=conversationBefore.filter(m=>m.persist!==false).map(serialiseMessage);
-     const interimSaved=await updatePack?.({...pack,extractedData:interimData});
+     const interimSaved=await updatePack?.({...workingPack,extractedData:interimData});
      if(!interimSaved)throw new Error("The message could not be saved to the pack. Please reload and try again.");
-     const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack:{...pack,customerStrategy:pack.customerStrategy||pack.extractedData?.customerStrategy||getCustomerStrategy(pack.customerId||pack.customer),conversation:conversationBefore.slice(-12).map(m=>({type:m.type||"agent",text:m.text||""})),extractedData:{...(pack.extractedData||{}),agentMessages:undefined}}})});
+     workingPack=interimSaved;
+     const response=await fetch("/api/agent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:q,pack:{...workingPack,customerStrategy:workingPack.customerStrategy||workingPack.extractedData?.customerStrategy||getCustomerStrategy(workingPack.customerId||workingPack.customer),conversation:conversationBefore.slice(-12).map(m=>({type:m.type||"agent",text:m.text||""})),extractedData:{...(workingPack.extractedData||{}),agentMessages:undefined}}})});
      const result=await response.json();
      if(!response.ok)throw new Error(result.error||"Agent request failed");
      let reply=result.reply||"I couldn't produce an answer from the supplied pack.";
-     let savedPack=pack;
+     let savedPack=workingPack;
      if(result.action==="create_customer"){
-       const name=String(result.target?.customerName||pack.customer||pack.extractedData?.exporter||pack.extractedData?.exporterName||"").trim();
+       const name=String(result.target?.customerName||workingPack.customer||workingPack.extractedData?.exporter||workingPack.extractedData?.exporterName||"").trim();
        if(!name)throw new Error("The agent did not return a customer name.");
        const response=await fetch("/api/organisation",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
        const data=await response.json().catch(()=>({}));
@@ -412,21 +414,22 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
          if(!strategyResponse.ok||!strategyData.strategy?.id)throw new Error("Customer was created, but its strategy could not be saved: "+(strategyData.error||"unknown error"));
          createdStrategy=strategyData.strategy;
        }
-       const nextData=JSON.parse(JSON.stringify(pack.extractedData||{}));
+       const nextData=JSON.parse(JSON.stringify(workingPack.extractedData||{}));
        nextData.customerIdentification={...(nextData.customerIdentification||{}),matched:true,ambiguous:false,possibleMatch:false,customerId:data.customer.id,customerName:data.customer.name,matchedBy:"agent-created"};
        if(createdStrategy?.config)nextData.customerStrategy=createdStrategy.config;
        if(createdStrategy?.version)nextData.customerStrategyVersion=createdStrategy.version;
        nextData.customerStrategyApplied=Boolean(createdStrategy?.config);
-       savedPack={...pack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:createdStrategy?.config||{},customerStrategyApplied:Boolean(createdStrategy?.config),customerStrategyVersion:createdStrategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
-       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The customer was created, but the pack update conflicted with another change.");savedPack=persisted;}
+       savedPack={...workingPack,customer:data.customer.name,customerId:data.customer.id,customerStrategy:createdStrategy?.config||{},customerStrategyApplied:Boolean(createdStrategy?.config),customerStrategyVersion:createdStrategy?.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The customer was created, but the pack update conflicted with another change.");savedPack=persisted;workingPack=persisted;}
        await recordHistory?.(savedPack,"customer_created_and_associated","Customer created by Review Agent and linked to current pack.",null,{customerId:data.customer.id,customerName:data.customer.name,strategyVersion:createdStrategy?.version||null},null,"system","Customs IDP Agent");
        reply="Customer "+data.customer.name+" was created and linked to this pack."+(createdStrategy?.config?" Its customer strategy was also saved as version "+createdStrategy.version+".":"");
      }
-     if(result.action==="save_customer_strategy"){
+     const durableStrategyRequest=result.action==="strategy_proposal"&&/\b(always|from\s+now\s+on|for\s+this\s+customer|customer[- ]specific|going\s+forward|every\s+pack|future\s+packs)\b/i.test(q);
+     if(result.action==="save_customer_strategy"||durableStrategyRequest){
        const strategy=result.strategyProposal?.resultingStrategy;
        if(!strategy)throw new Error("The agent returned no complete strategy to save.");
-       const customerId=pack.customerId||pack.extractedData?.customerIdentification?.customerId;
-       const customerName=pack.customer||pack.extractedData?.customerIdentification?.customerName||result.target?.customerName||"";
+       const customerId=workingPack.customerId||workingPack.extractedData?.customerIdentification?.customerId;
+       const customerName=workingPack.customer||workingPack.extractedData?.customerIdentification?.customerName||result.target?.customerName||"";
        const response=await fetch("/api/organisation?action=customers",{credentials:"include"});
        const customerData=await response.json().catch(()=>({}));
        if(!response.ok)throw new Error(customerData.error||"Unable to load customers.");
@@ -436,15 +439,15 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        const saveResponse=await fetch("/api/organisation",{method:"PUT",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({customerId:customer.id,strategy})});
        const saveData=await saveResponse.json().catch(()=>({}));
        if(!saveResponse.ok||!saveData.strategy?.id)throw new Error(saveData.error||"Unable to save customer strategy.");
-       const nextData=JSON.parse(JSON.stringify(pack.extractedData||{}));
+       const nextData=JSON.parse(JSON.stringify(workingPack.extractedData||{}));
        nextData.customerIdentification={...(nextData.customerIdentification||{}),matched:true,ambiguous:false,possibleMatch:false,customerId:customer.id,customerName:customer.name,matchedBy:nextData.customerIdentification?.matchedBy||"agent"};
        nextData.customerStrategy=saveData.strategy.config||strategy;
        nextData.customerStrategyApplied=true;
        nextData.customerStrategyVersion=saveData.strategy.version||null;
-       const confirmation={type:"agent",text:"Customer strategy v"+String(saveData.strategy.version||"")+" was saved to "+customer.name+" and applied to this pack. It will be used automatically for future packs identified for this customer.",persist:true};
+       const confirmation={type:"agent",text:"Customer strategy v"+String(saveData.strategy.version||"")+" was saved to "+customer.name+" and applied to this workingPack. It will be used automatically for future packs identified for this customer.",persist:true};
        nextData.agentMessages=[...(nextData.agentMessages||[]),confirmation];
-       savedPack={...pack,customer:customer.name,customerId:customer.id,customerStrategy:saveData.strategy.config||strategy,customerStrategyApplied:true,customerStrategyVersion:saveData.strategy.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
-       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The strategy was saved, but the pack update conflicted with another change.");savedPack=persisted;}
+       savedPack={...workingPack,customer:customer.name,customerId:customer.id,customerStrategy:saveData.strategy.config||strategy,customerStrategyApplied:true,customerStrategyVersion:saveData.strategy.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The strategy was saved, but the pack update conflicted with another change.");savedPack=persisted;workingPack=persisted;}
        await recordHistory?.(savedPack,"strategy_applied","Customer strategy saved and applied by Review Agent.",null,{customerId:customer.id,customerName:customer.name,version:saveData.strategy.version||null},null,"system","Customs IDP Agent");
        reply=confirmation.text;
      }
@@ -452,7 +455,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        reply+=(/not changed|confirm/i.test(reply)?"":" I have not changed the extracted data. Please confirm below if you want these email-sourced values added.");
      }
      if(result.action==="approve_weight_apportionment"){
-       const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
+       const data=JSON.parse(JSON.stringify(workingPack.extractedData||{}));
        data.weightApportionmentDecision={
          status:"approved",
          approvedBy:currentUserName,
@@ -460,7 +463,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
          method:"line-value net allocation, then net-ratio gross allocation",
          maxDecimalPlaces:3
        };
-       savedPack={...pack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       savedPack={...workingPack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
        savedPack=typeof persistValidatedPack==="function"?await persistValidatedPack(savedPack):savedPack;
        reply+=" I applied the configured weight apportionment method: net weight by line value, then gross weight by the resulting net-weight ratio, rounded to a maximum of 3 decimal places. The derived line weights have been applied and the pack has been revalidated.";
      }
@@ -472,12 +475,12 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
          const explicitLine=q.match(/\bline\s*(\d+)\b/i);
          if(explicitLine) target.lineIndex=Number(explicitLine[1])-1;
        }
-       const data=JSON.parse(JSON.stringify(pack.extractedData||{}));
+       const data=JSON.parse(JSON.stringify(workingPack.extractedData||{}));
        if(target.scope==="line"&&Number.isInteger(target.lineIndex)&&data.lines?.[target.lineIndex]) data.lines[target.lineIndex][target.field]=target.value;
        else if(target.scope==="primary"&&target.field) data[target.field]=target.value;
        else throw new Error("The agent returned an invalid correction target.");
-       data.reviewOverrides=[...(data.reviewOverrides||[]),{scope:target.scope,field:target.field,lineIndex:target.lineIndex??null,oldValue:target.scope==="line"?pack.extractedData?.lines?.[target.lineIndex]?.[target.field]:pack.extractedData?.[target.field],newValue:target.value,sourceDocumentId:target.sourceDocumentId||null,sourcePage:target.sourcePage||null,createdAt:new Date().toISOString()}];
-       savedPack={...pack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       data.reviewOverrides=[...(data.reviewOverrides||[]),{scope:target.scope,field:target.field,lineIndex:target.lineIndex??null,oldValue:target.scope==="line"?workingPack.extractedData?.lines?.[target.lineIndex]?.[target.field]:workingPack.extractedData?.[target.field],newValue:target.value,sourceDocumentId:target.sourceDocumentId||null,sourcePage:target.sourcePage||null,createdAt:new Date().toISOString()}];
+       savedPack={...workingPack,extractedData:data,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
        reply+=" I saved that correction to the pack and cleared the previous validation result. The affected data needs to be validated again.";
      }
      const agentMessage={
@@ -500,8 +503,8 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const failed={type:"agent",text:"I couldn't reach the review agent. "+error.message,persist:true};
      const completed=[...conversationBefore,failed];
      setMessages(completed);
-     const data=JSON.parse(JSON.stringify(pack.extractedData||{}));data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
-     const finalPack={...pack,extractedData:data};
+     const data=JSON.parse(JSON.stringify(workingPack.extractedData||{}));data.agentMessages=completed.filter(m=>m.persist!==false).map(serialiseMessage);
+     const finalPack={...workingPack,extractedData:data};
      const savedFailure=await updatePack?.(finalPack);
      if(!savedFailure)notify?.("The error message was shown, but the chat could not be saved.");
    }finally{setIsSending(false);}
