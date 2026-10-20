@@ -279,6 +279,24 @@ export function validateStandardCustomsRecord(data={}){
     }
   }
 
+  // A customer strategy may intentionally set the working invoice total from line amounts.
+  // Keep the source amount visible as a review item when it differs; do not silently
+  // treat the intentional override as a clean source reconciliation.
+  const appliedInvoiceTotalRule=data.invoiceTotalRuleApplied;
+  if(appliedInvoiceTotalRule && numberValue(appliedInvoiceTotalRule.sourceInvoiceTotal)!==null
+    && numberValue(appliedInvoiceTotalRule.workingInvoiceTotal)!==null
+    && Math.abs(numberValue(appliedInvoiceTotalRule.sourceInvoiceTotal)-numberValue(appliedInvoiceTotalRule.workingInvoiceTotal))>0.01){
+    review(
+      "Customer strategy invoice-total override",
+      "invoiceTotalRuleApplied",
+      "review",
+      String(appliedInvoiceTotalRule.sourceInvoiceTotal)+" → "+String(appliedInvoiceTotalRule.workingInvoiceTotal),
+      "Source total retained; working total follows the configured customer rule",
+      "Customer strategy "+String(appliedInvoiceTotalRule.ruleId||appliedInvoiceTotalRule.rule||"SUM_LINE_AMOUNTS")+" intentionally set the working invoice total from item-line amounts. Confirm the source-to-working difference before posting.",
+      {ruleId:appliedInvoiceTotalRule.ruleId||appliedInvoiceTotalRule.rule,sourceTotal:numberValue(appliedInvoiceTotalRule.sourceInvoiceTotal),workingTotal:numberValue(appliedInvoiceTotalRule.workingInvoiceTotal),difference:numberValue(appliedInvoiceTotalRule.difference)}
+    );
+  }
+
   return {
     checks,
     summary:{

@@ -191,8 +191,17 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     // Apply the customer's durable invoice-total rule to the working customs record.
     // Keep the extracted document amount separately so the source value remains auditable.
     const strategyInstructions=String(strategy?.instructions||"");
-    const totalFromLines= strategy?.totalInvoiceFromLines===true
+    const structuredInvoiceTotalRule = strategy?.invoiceTotalRule
+      || (Array.isArray(strategy?.fieldRules) ? strategy.fieldRules.find(rule => String(rule?.type||rule?.action||"").toUpperCase()==="SUM_LINE_AMOUNTS") : null)
+      || (Array.isArray(strategy?.extractionRules) ? strategy.extractionRules.find(rule => String(rule?.type||rule?.action||"").toUpperCase()==="SUM_LINE_AMOUNTS") : null);
+    const structuredRuleEnabled = structuredInvoiceTotalRule && typeof structuredInvoiceTotalRule==="object"
+      && structuredInvoiceTotalRule.enabled!==false
+      && ["SUM_LINE_AMOUNTS","sum_line_amounts"].includes(String(structuredInvoiceTotalRule.type||structuredInvoiceTotalRule.action||"").toUpperCase());
+    const totalFromLines= strategy?.totalInvoiceFromLines===true || structuredRuleEnabled
       || /(?:always\s+use|use|calculate|set|derive)[^.!?]{0,100}(?:sum|total)[^.!?]{0,100}(?:item[- ]line|line[- ]item|goods[- ]line)[^.!?]{0,100}(?:amount|value)|(?:item[- ]line|line[- ]item|goods[- ]line)[^.!?]{0,100}(?:sum|total)[^.!?]{0,100}(?:working\s+)?invoice\s+total/i.test(strategyInstructions);
+    const invoiceTotalRuleId = structuredRuleEnabled
+      ? (structuredInvoiceTotalRule.id || "SUM_LINE_AMOUNTS")
+      : "SUM_LINE_AMOUNTS";
     if(totalFromLines && mergedLines.length>0&&!customerStrategyRequiresApproval(strategy,"invoice_total")){
       const lineAmounts=mergedLines.map(line=>toNumber(line.totalValue??line.lineValue??line.unitValue));
       if(lineAmounts.every(value=>value!==null)){
@@ -201,15 +210,44 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         merged.sourceInvoiceTotal=sourceInvoiceTotal;
         merged.totalInvoicedAmount=calculatedTotal;
         merged.invoiceTotalRuleApplied={
-          rule:"customer_total_invoice_from_lines",
+          rule:invoiceTotalRuleId,
+          ruleId:invoiceTotalRuleId,
+          customer:pack?.customer?.name || pack?.customerName || strategy?.customerName || null,
           sourceInvoiceTotal,
           workingInvoiceTotal:calculatedTotal,
+          difference:sourceInvoiceTotal===null||toNumber(sourceInvoiceTotal)===null?null:Math.round((calculatedTotal-toNumber(sourceInvoiceTotal))*100)/100,
           lineCount:mergedLines.length,
+          status:"applied",
           explanation:"Applied the customer strategy: the working invoice total is the sum of item-line amounts. The original document invoice total is retained separately as sourceInvoiceTotal."
         };
+        if(sourceInvoiceTotal!==null && toNumber(sourceInvoiceTotal)!==null && Math.abs(calculatedTotal-toNumber(sourceInvoiceTotal))>0.01){
+          strategyChanges.push({
+            category:"invoiceTotal",
+            type:"SUM_LINE_AMOUNTS",
+            ruleId:invoiceTotalRuleId,
+            field:"totalInvoicedAmount",
+            before:sourceInvoiceTotal,
+            after:calculatedTotal,
+            difference:Math.round((calculatedTotal-toNumber(sourceInvoiceTotal))*100)/100,
+            reason:"Configured customer strategy requires the sum of item-line amounts as the working invoice total."
+          });
+        }
       }
     }
-    if(merged.invoiceTotalRuleApplied)strategyApplications.push({category:"invoiceTotal",status:"applied",summary:"Working invoice total calculated from item-line amounts.",details:{workingTotal:merged.invoiceTotalRuleApplied.workingInvoiceTotal,sourceTotal:merged.invoiceTotalRuleApplied.sourceInvoiceTotal,lineCount:merged.invoiceTotalRuleApplied.lineCount}});
+    if(merged.invoiceTotalRuleApplied)strategyApplications.push({
+      category:"invoiceTotal",
+      status:"applied",
+      ruleId:merged.invoiceTotalRuleApplied.ruleId,
+      summary:"Working invoice total calculated from item-line amounts.",
+      details:{
+        ruleId:merged.invoiceTotalRuleApplied.ruleId,
+        workingTotal:merged.invoiceTotalRuleApplied.workingInvoiceTotal,
+        sourceTotal:merged.invoiceTotalRuleApplied.sourceInvoiceTotal,
+        difference:merged.invoiceTotalRuleApplied.difference,
+        lineCount:merged.invoiceTotalRuleApplied.lineCount,
+        sourceValuePreserved:true
+      }
+    });
     const apportionedLines=mergedLines.filter(line=>line?._weightApportionment);
     if(apportionedLines.length)strategyApplications.push({category:"weightApportionment",status:"applied",summary:"Document-level weights apportioned across goods lines.",details:{lines:apportionedLines.length,method:"line value, then quantity, then equal allocation"}});
     else if(strategy?.autoApplyWeightApportionment===true)strategyApplications.push({category:"weightApportionment",status:"not_applied",summary:"Automatic weight apportionment is enabled but could not be applied.",details:{reason:"Missing eligible source totals or line allocation basis"}});
