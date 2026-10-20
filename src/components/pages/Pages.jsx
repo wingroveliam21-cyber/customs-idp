@@ -263,7 +263,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        type:"customsEntrySummary",
        summary:{
          invoice:value(invoice.invoiceNumber),exporter:value(invoice.exporter),consignee:value(invoice.consignee),
-         currency:value(invoice.currency),invoiceValue:value(invoice.totalInvoiceValue),exportCountry:value(invoice.countryOfExport),exporterAddress:value(invoice.exporterAddress),exporterAddressLine1:value(invoice.exporterAddressLine1),exporterPostcode:value(invoice.exporterPostcode),exporterCity:value(invoice.exporterCity),exporterCountryIso:value(invoice.exporterCountryIso),exporterEoriNo:value(invoice.exporterEoriNo),consigneeAddress:value(invoice.consigneeAddress),consigneeAddressLine1:value(invoice.consigneeAddressLine1),consigneePostcode:value(invoice.consigneePostcode),consigneeCity:value(invoice.consigneeCity),consigneeCountryIso:value(invoice.consigneeCountryIso),
+         currency:value(invoice.currency),invoiceValue:value(workingData.invoiceTotalRuleApplied?.workingInvoiceTotal??workingData.totalInvoicedAmount??invoice.totalInvoiceValue),sourceInvoiceValue:value(workingData.invoiceTotalRuleApplied?.sourceInvoiceTotal??workingData.sourceInvoiceTotal??invoice.totalInvoiceValue),invoiceTotalRuleApplied:workingData.invoiceTotalRuleApplied||null,exportCountry:value(invoice.countryOfExport),exporterAddress:value(invoice.exporterAddress),exporterAddressLine1:value(invoice.exporterAddressLine1),exporterPostcode:value(invoice.exporterPostcode),exporterCity:value(invoice.exporterCity),exporterCountryIso:value(invoice.exporterCountryIso),exporterEoriNo:value(invoice.exporterEoriNo),consigneeAddress:value(invoice.consigneeAddress),consigneeAddressLine1:value(invoice.consigneeAddressLine1),consigneePostcode:value(invoice.consigneePostcode),consigneeCity:value(invoice.consigneeCity),consigneeCountryIso:value(invoice.consigneeCountryIso),
          destination:value(invoice.sourceCountryOfDestination),packages:value(invoice.totalPackages),
          gross:value(selectedWeightSource==="packing_list"?(packingDoc?.extraction?.totalGrossWeight??invoice.totalGrossWeight):invoice.totalGrossWeight),
          net:value(selectedWeightSource==="packing_list"?(packingDoc?.extraction?.totalNetWeight??invoice.totalNetWeight):invoice.totalNetWeight),
@@ -275,6 +275,11 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        },
        persist:false
      },
+     ...(workingData.invoiceTotalRuleApplied?[{
+       type:"strategyAppliedSummary",
+       text:"Customer strategy applied automatically: "+workingData.invoiceTotalRuleApplied.explanation+" Working total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+". The original value is retained for audit; validation is based on the configured working total.",
+       persist:false
+     }]:[]),
      {type:"validationSummary",checks:Array.isArray(pack.validationChecks)?pack.validationChecks:validateStandardCustomsRecord(pack.workingRecord||pack.extractedData||{}).checks,persist:false},
      ...(shouldAskWeightApportionment?[{
        type:"weightApportionmentDecision",
