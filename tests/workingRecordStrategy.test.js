@@ -13,7 +13,7 @@ test("customer source priority overrides conflicting top-level fields and record
   }};
   const record=buildWorkingCustomsRecord(pack,{sourcePriority:["packing_list","commercial_invoice"]});
   assert.equal(record.deliveryTerm,"DAP");
-  assert.equal(record.documentType,undefined);
+  assert.equal(record.documents[0].extraction.documentType,"commercial_invoice");
   assert.equal(record.customerStrategyApplications.find(x=>x.category==="sourcePriority").status,"applied");
   assert.equal(record.customerStrategyChanges.some(x=>x.field==="deliveryTerm"&&x.before==="EXW"&&x.after==="DAP"),true);
 });
