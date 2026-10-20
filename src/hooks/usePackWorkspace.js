@@ -49,11 +49,15 @@ export function usePackWorkspace({ authenticated }) {
           const organisationData=await organisationResponse.json().catch(()=>({}));
           if(organisationResponse.ok&&Array.isArray(organisationData.customers)){
             organisationData.customers.forEach(customer=>{
-              customerStrategyStore[customer.name]={
+              const strategy={
                 ...(customer.strategy||{}),
                 autoApplyWeightApportionment:customer.strategy?.autoApplyWeightApportionment===true,
                 emailFields:Array.isArray(customer.strategy?.emailFields)?customer.strategy.emailFields:[]
               };
+              // Review Agent may resolve a customer by UUID; legacy callers may use the name.
+              // Index both forms so a saved strategy is available regardless of identifier.
+              if(customer.id)customerStrategyStore[String(customer.id)]=strategy;
+              if(customer.name)customerStrategyStore[customer.name]=strategy;
             });
           }
         }catch{}
