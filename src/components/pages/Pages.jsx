@@ -670,7 +670,6 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
              <div><span>Invoice number</span><b>{s.invoice||"—"}</b></div>
              <div><span>Currency</span><b>{s.currency||"—"}</b></div>
              <div><span>{s.invoiceTotalRuleApplied?"Working invoice total":"Invoice Value"}</span><b>{s.invoiceValue?((s.currency||"")+" "+s.invoiceValue):"—"}</b></div>
-             {s.invoiceTotalRuleApplied&&<div><span>Source invoice total (original document)</span><b>{s.sourceInvoiceValue?((s.currency||"")+" "+s.sourceInvoiceValue):"—"}</b></div>}
              <div><span>Export</span><b>{s.exportCountry||"—"}</b></div>
              <div><span>Destination</span><b>{s.destination||"—"}</b></div>
              <div><span>Packages</span><b>{s.packages||"—"}</b></div>
