@@ -34,7 +34,9 @@ const DEFAULT_STRATEGY={
   extractionRules:[],
   fieldRules:[],
   customValidations:[],
-  autoApplyWeightApportionment:false
+  autoApplyWeightApportionment:false,
+  sourcePriority:[],
+  approvalRequirements:[]
 };
 
 function cloneStrategy(strategy){
@@ -49,6 +51,8 @@ function cloneStrategy(strategy){
     requiredFields:Array.isArray(strategy?.requiredFields)?[...strategy.requiredFields]:[],
     fieldRules:Array.isArray(strategy?.fieldRules)?[...strategy.fieldRules]:[],
     customValidations:Array.isArray(strategy?.customValidations)?[...strategy.customValidations]:[],
+    sourcePriority:Array.isArray(strategy?.sourcePriority)?[...strategy.sourcePriority]:[],
+    approvalRequirements:Array.isArray(strategy?.approvalRequirements)?[...strategy.approvalRequirements]:[],
     autoApplyWeightApportionment:strategy?.autoApplyWeightApportionment===true
   };
 }
@@ -977,6 +981,39 @@ function StrategySection({
             onChange={event=>setStrategy(current=>({...current,instructions:event.target.value}))}
             placeholder="Example: This customer normally provides weights on the packing list. Use those weights when the invoice does not contain weights."
             rows={7}
+          />
+        </div>
+
+        <div className="strategy-v1-card">
+          <div className="strategy-v1-card-head">
+            <div>
+              <strong>Document source priority</strong>
+              <span>When documents conflict, the first document type in this list wins for supported top-level fields. Use document type IDs such as commercial_invoice and packing_list.</span>
+            </div>
+          </div>
+          <input
+            className="strategy-v1-textarea"
+            value={(strategy.sourcePriority||[]).join(", ")}
+            onChange={event=>setStrategy(current=>({...current,sourcePriority:event.target.value.split(",").map(value=>value.trim()).filter(Boolean)}))}
+            placeholder="e.g. packing_list, commercial_invoice"
+            aria-label="Document source priority"
+          />
+        </div>
+
+        <div className="strategy-v1-card">
+          <div className="strategy-v1-card-head">
+            <div>
+              <strong>Customer-specific approval requirements</strong>
+              <span>Approval rules are stored as structured requirements. Each requirement should identify the action or field requiring approval.</span>
+            </div>
+          </div>
+          <textarea
+            className="strategy-v1-textarea"
+            value={(strategy.approvalRequirements||[]).map(rule=>typeof rule==="string"?rule:JSON.stringify(rule)).join("\n")}
+            onChange={event=>setStrategy(current=>({...current,approvalRequirements:event.target.value.split("\n").map(value=>value.trim()).filter(Boolean).map(value=>{try{return JSON.parse(value);}catch{return value;}})}))}
+            placeholder={'One JSON rule per line, e.g. {"action":"set_field","field":"deliveryTerm","required":true}'}
+            rows={3}
+            aria-label="Customer-specific approval requirements"
           />
         </div>
 
