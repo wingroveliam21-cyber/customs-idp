@@ -4,7 +4,10 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [feat/auditable-customer-strategy-engine]
+    branches:
+      - feat/auditable-customer-strategy-engine
+      - fix/**
+  workflow_dispatch:
 
 jobs:
   verify:
