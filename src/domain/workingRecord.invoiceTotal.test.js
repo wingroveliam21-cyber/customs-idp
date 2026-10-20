@@ -9,18 +9,13 @@ test("SUM_LINE_AMOUNTS records source, working total, difference and audit chang
     extractedData: {
       totalInvoicedAmount: 666,
       currency: "GBP",
-      documents: [{
-        filename: "invoice.pdf",
-        extraction: {
-          documentType: "commercial_invoice",
-          lines: [
-            { lineNo: 1, quantity: 9, totalValue: 1269, description: "Line 1" },
-            { lineNo: 2, quantity: 10, totalValue: 1580, description: "Line 2" },
-            { lineNo: 3, quantity: 11, totalValue: 1925, description: "Line 3" },
-            { lineNo: 4, quantity: 12, totalValue: 2304, description: "Line 4" }
-          ]
-        }
-      }]
+      lines: [
+        { lineNo: 1, quantity: 9, totalValue: 1269, description: "Line 1" },
+        { lineNo: 2, quantity: 10, totalValue: 1580, description: "Line 2" },
+        { lineNo: 3, quantity: 11, totalValue: 1925, description: "Line 3" },
+        { lineNo: 4, quantity: 12, totalValue: 2304, description: "Line 4" }
+      ],
+      documents: [{ filename: "invoice.pdf", extraction: { documentType: "commercial_invoice" } }]
     }
   };
   const strategy = {
