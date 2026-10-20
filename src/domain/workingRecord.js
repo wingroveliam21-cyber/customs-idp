@@ -224,15 +224,22 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
         strategyApplications.push({category:"lineCurrencyFromHeader",status:filled?"applied":"no_change_needed",summary:filled?"Filled missing line currencies from header currency.":"No missing line currencies needed filling.",details:{headerCurrency,linesChanged:filled}});
       }else strategyApplications.push({category:"lineCurrencyFromHeader",status:headerCurrency?"pending_approval":"not_applied",summary:headerCurrency?"Header currency rule is held for approval.":"Header currency is unavailable; line currency rule could not be applied.",details:{headerCurrency}});
     }
+    if(String(strategy?.instructions||"").trim())strategyApplications.push({category:"instructions",status:"prompt_only",summary:"Free-text customer instructions were supplied to the extraction prompt but are not independently verifiable by the deterministic executor.",details:{length:String(strategy.instructions).length}});
+    if(strategy?.exporterAddress)strategyApplications.push({category:"exporterAddress",status:"unsupported",summary:"Configured exporter address instruction has no deterministic address transformation handler yet.",details:{configured:true}});
+    if(strategy?.importerAddress)strategyApplications.push({category:"importerAddress",status:"unsupported",summary:"Configured importer/consignee address instruction has no deterministic address transformation handler yet.",details:{configured:true}});
+    if(Array.isArray(strategy?.emailFields)&&strategy.emailFields.length)strategyApplications.push({category:"emailFields",status:"not_evaluated",summary:"Customer email fields were not evaluated in this document-pack processing context.",details:{configuredFields:strategy.emailFields.length}});
     const execution=applyCustomerStrategyRules(merged,strategy);
     const applications=[...strategyApplications,...(execution.record.customerStrategyApplications||[])];
-    if(sourcePriority.length)applications.unshift({
-      category:"sourcePriority",
-      status:sourcePriorityChanges.length?"applied":"no_change_needed",
-      summary:sourcePriorityChanges.length?"Configured source priority selected preferred document values.":"Source priority evaluated; no conflicting top-level values needed replacement.",
-      details:sourcePriorityChanges,
-      changes:sourcePriorityChanges
-    });
+    if(sourcePriority.length){
+      const approvalRequired=customerStrategyRequiresApproval(strategy,"source_priority");
+      applications.unshift({
+        category:"sourcePriority",
+        status:approvalRequired?"pending_approval":sourcePriorityChanges.length?"applied":"no_change_needed",
+        summary:approvalRequired?"Source-priority overrides are held for customer-specific approval.":sourcePriorityChanges.length?"Configured source priority selected preferred document values.":"Source priority evaluated; no conflicting top-level values needed replacement.",
+        details:{scope:"top-level fields only; line-level conflict resolution remains separately audited",changes:sourcePriorityChanges},
+        changes:sourcePriorityChanges
+      });
+    }
     execution.record.customerStrategyApplications=applications;
     execution.record.customerStrategyChanges=[...(execution.record.customerStrategyChanges||[]),...strategyChanges,...sourcePriorityChanges.map(change=>({...change,category:"sourcePriority",reason:"Configured customer source priority"}))];
     execution.record.workingRecordSource="primary invoice + supporting documents";
