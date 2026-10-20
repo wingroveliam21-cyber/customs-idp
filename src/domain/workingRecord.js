@@ -154,6 +154,28 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     }
 
     merged.lines=mergedLines;
+
+    // Apply the customer's durable invoice-total rule to the working customs record.
+    // Keep the extracted document amount separately so the source value remains auditable.
+    const strategyInstructions=String(strategy?.instructions||"");
+    const totalFromLines= strategy?.totalInvoiceFromLines===true
+      || /(?:always\s+use|use|calculate|set|derive)[^.!?]{0,100}(?:sum|total)[^.!?]{0,100}(?:item[- ]line|line[- ]item|goods[- ]line)[^.!?]{0,100}(?:amount|value)|(?:item[- ]line|line[- ]item|goods[- ]line)[^.!?]{0,100}(?:sum|total)[^.!?]{0,100}(?:working\s+)?invoice\s+total/i.test(strategyInstructions);
+    if(totalFromLines && mergedLines.length>0){
+      const lineAmounts=mergedLines.map(line=>toNumber(line.totalValue??line.lineValue??line.unitValue));
+      if(lineAmounts.every(value=>value!==null)){
+        const calculatedTotal=Math.round(lineAmounts.reduce((sum,value)=>sum+value,0)*100)/100;
+        const sourceInvoiceTotal=merged.totalInvoicedAmount??merged.totalAmountInvoiced??merged.totalInvoiceValue??null;
+        merged.sourceInvoiceTotal=sourceInvoiceTotal;
+        merged.totalInvoicedAmount=calculatedTotal;
+        merged.invoiceTotalRuleApplied={
+          rule:"customer_total_invoice_from_lines",
+          sourceInvoiceTotal,
+          workingInvoiceTotal:calculatedTotal,
+          lineCount:mergedLines.length,
+          explanation:"Applied the customer strategy: the working invoice total is the sum of item-line amounts. The original document invoice total is retained separately as sourceInvoiceTotal."
+        };
+      }
+    }
     merged.workingRecordSource="primary invoice + supporting documents";
     merged.sourceDiscrepancies=sourceDiscrepancies;
     return merged;
