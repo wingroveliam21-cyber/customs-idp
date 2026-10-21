@@ -45,22 +45,53 @@ function buildPlainEnglishStrategySummary(workingData, invoiceDoc) {
       (lineCount ? ", calculated from " + lineCount + " item lines." : "."));
     // Compare against the untouched invoice extraction, not the merged working record.
     const extracted = invoiceDoc?.extraction || {};
-    const sourceCandidates = [
+    const ruleSourceTotal = totalRule.sourceInvoiceTotal;
+    const directSourceCandidates = [
+      ruleSourceTotal,
+      workingData.sourceInvoiceTotal,
+      workingData.originalInvoiceTotal,
+      workingData.sourceInvoiceValue,
       extracted.sourceInvoiceTotal,
+      extracted.originalInvoiceTotal,
       extracted.totalInvoicedAmount,
       extracted.totalAmountInvoiced,
       extracted.totalInvoiceValue,
       extracted.invoiceTotal,
-      extracted.invoiceValue
+      extracted.invoiceValue,
+      extracted.totalInvoiceAmount,
+      extracted.invoiceAmount,
+      extracted.totalAmount
     ];
-    const sourceTotal = sourceCandidates.find(candidate =>
+    const totalKey = /^(source|original)?(invoice)?(total|amount|value|invoicedamount|amountinvoiced|totalinvoicedamount|totalinvoicevalue|invoicevalue|invoiceamount|totalinvoiceamount)$/i;
+    const nestedSourceCandidates = [];
+    const collectSourceTotals = (object, depth = 0) => {
+      if (!object || typeof object !== "object" || depth > 5) return;
+      Object.entries(object).forEach(([key, candidate]) => {
+        const normalizedKey = key.replace(/[^a-z]/gi, "").toLowerCase();
+        if (totalKey.test(normalizedKey) && (typeof candidate === "string" || typeof candidate === "number") && candidate !== "") {
+          nestedSourceCandidates.push(candidate);
+        } else if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+          collectSourceTotals(candidate, depth + 1);
+        }
+      });
+    };
+    collectSourceTotals(extracted);
+    const sourceTotal = directSourceCandidates.find(candidate =>
       candidate !== undefined && candidate !== null && candidate !== ""
-    );
+    ) ?? nestedSourceCandidates[0];
     if (sourceTotal !== undefined) {
-      const sourceNumber = Number(String(sourceTotal).replace(/[£,\\s]/g, ""));
-      const workingNumber = Number(totalRule.workingInvoiceTotal);
+      const parseAmount = candidate => {
+        if (typeof candidate === "number") return candidate;
+        const normalized = String(candidate).replace(/[£$,\\s]/g, "").replace(/^(GBP|EUR|USD)/i, "");
+        return Number(normalized);
+      };
+      const sourceNumber = parseAmount(sourceTotal);
+      const workingNumber = parseAmount(totalRule.workingInvoiceTotal);
       if (Number.isFinite(sourceNumber) && Number.isFinite(workingNumber) && Math.abs(sourceNumber - workingNumber) > 0.01) {
-        messages.push("The original invoice shows " + value(sourceNumber) + ", which differs from the item-line total. I've kept the calculated total as the working value and flagged the difference for review.");
+        const difference = Math.abs(workingNumber - sourceNumber);
+        messages.push("INVOICE TOTAL DISCREPANCY: the original invoice total is " + value(sourceNumber) +
+          ", but the calculated item-line total is " + value(workingNumber) + " (difference " + value(difference) +
+          "). The original invoice total has been preserved and the difference needs review before submission.");
       }
     }
   }
