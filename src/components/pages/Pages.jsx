@@ -43,13 +43,24 @@ function buildPlainEnglishStrategySummary(workingData, invoiceDoc) {
     const lineCount = Number(totalRule.lineCount) || 0;
     messages.push("The working invoice total is " + value(totalRule.workingInvoiceTotal) +
       (lineCount ? ", calculated from " + lineCount + " item lines." : "."));
+    // Compare against the untouched invoice extraction, not the merged working record.
     const extracted = invoiceDoc?.extraction || {};
-    const sourceTotal = extracted.totalInvoicedAmount ?? extracted.totalAmountInvoiced ?? extracted.totalInvoiceValue;
-    if (sourceTotal !== undefined && sourceTotal !== null && sourceTotal !== "") {
-      const sourceNumber = Number(String(sourceTotal).replace(/,/g, ""));
+    const sourceCandidates = [
+      extracted.sourceInvoiceTotal,
+      extracted.totalInvoicedAmount,
+      extracted.totalAmountInvoiced,
+      extracted.totalInvoiceValue,
+      extracted.invoiceTotal,
+      extracted.invoiceValue
+    ];
+    const sourceTotal = sourceCandidates.find(candidate =>
+      candidate !== undefined && candidate !== null && candidate !== ""
+    );
+    if (sourceTotal !== undefined) {
+      const sourceNumber = Number(String(sourceTotal).replace(/[£,\\s]/g, ""));
       const workingNumber = Number(totalRule.workingInvoiceTotal);
       if (Number.isFinite(sourceNumber) && Number.isFinite(workingNumber) && Math.abs(sourceNumber - workingNumber) > 0.01) {
-        messages.push("The invoice shows " + value(sourceNumber) + ", which differs from the item-line total. I've kept the calculated total as the working value and flagged the difference for review.");
+        messages.push("The original invoice shows " + value(sourceNumber) + ", which differs from the item-line total. I've kept the calculated total as the working value and flagged the difference for review.");
       }
     }
   }
@@ -656,7 +667,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text">{m.text.split("\n").map((x,j)=><React.Fragment key={j}>{x}{j<m.text.split("\n").length-1&&<br/>}</React.Fragment>)}</div><div className="weight-decision-actions"><button className="secondary" onClick={()=>decideWeights("invoice",m.conflicts)}>Use Commercial Invoice weights</button><button className="secondary" onClick={()=>decideWeights("packing_list",m.conflicts)}>Use Packing List weights</button><button className="secondary" onClick={()=>emailCustomerReview()}><Mail size={15}/> Email customer</button></div></div></div>;
    }
    if(m.type==="strategyAppliedSummary"){
-     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy execution report</b><div>{m.text}</div></div></div></div>;
+     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy execution report</b><div>{String(m.text || "").replace(/\\s*\\*{0,2}svg\\*{0,2}\\s*$/i, "")}</div></div></div></div>;
    }
    if(m.type==="customsEntrySummary"&&m.summary){
      const s=m.summary;
