@@ -1018,7 +1018,7 @@ function StrategySection({
               <span>Net weight</span>
               <select
                 value={strategy.weightAggregation?.net||"none"}
-                onChange={event=>setStrategy(current=>({...current,weightAggregation:{net:"none",gross:"none",conflict:"review",...(current.weightAggregation||{}),net:event.target.value}}))}
+                onChange={event=>setStrategy(current=>({...current,weightAggregation:{...(current.weightAggregation||{}),net:event.target.value}}))}
               >
                 <option value="none">Do not aggregate automatically</option>
                 <option value="sum_lines">Sum item-line net weights</option>
@@ -1029,7 +1029,7 @@ function StrategySection({
               <span>Gross weight</span>
               <select
                 value={strategy.weightAggregation?.gross||"none"}
-                onChange={event=>setStrategy(current=>({...current,weightAggregation:{net:"none",gross:"none",conflict:"review",...(current.weightAggregation||{}),gross:event.target.value}}))}
+                onChange={event=>setStrategy(current=>({...current,weightAggregation:{...(current.weightAggregation||{}),gross:event.target.value}}))}
               >
                 <option value="none">Do not aggregate automatically</option>
                 <option value="sum_lines">Sum item-line gross weights</option>
@@ -1040,7 +1040,7 @@ function StrategySection({
               <span>When totals conflict</span>
               <select
                 value={strategy.weightAggregation?.conflict||"review"}
-                onChange={event=>setStrategy(current=>({...current,weightAggregation:{net:"none",gross:"none",conflict:"review",...(current.weightAggregation||{}),conflict:event.target.value}}))}
+                onChange={event=>setStrategy(current=>({...current,weightAggregation:{...(current.weightAggregation||{}),conflict:event.target.value}}))}
               >
                 <option value="review">Use calculated total and flag for review</option>
                 <option value="source">Keep source total and flag in audit</option>
