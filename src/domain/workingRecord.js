@@ -129,6 +129,52 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
       }else strategyApplications.push({category:"weightHandling",status:"not_applied",summary:"Configured weight source was not available in this pack.",details:{preferredSource:preferredType}});
     }
 
+    // Explicit customer strategy: aggregate line weights into header totals only when enabled.
+    const weightAggregation = strategy?.weightAggregation && typeof strategy.weightAggregation === "object" ? strategy.weightAggregation : {};
+    const parseConfiguredWeight = value => {
+      if (value === undefined || value === null || value === "") return null;
+      const parsed = Number(String(value).replace(/,/g, "").trim());
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    for (const config of [
+      { key: "net", field: "totalNetWeight", sourceField: "sourceTotalNetWeight", lineKeys: ["netMassKg", "netWeight", "netMass"], label: "Net weight" },
+      { key: "gross", field: "totalGrossWeight", sourceField: "sourceTotalGrossWeight", lineKeys: ["grossMassKg", "grossWeight", "grossMass"], label: "Gross weight" }
+    ]) {
+      const mode = weightAggregation[config.key] || "none";
+      if (mode !== "sum_lines") {
+        strategyApplications.push({ category: "weightAggregation", status: "no_change_needed", summary: config.label + (mode === "document_total" ? ": using document-level total only." : ": automatic aggregation is disabled."), details: { weight: config.key, mode, sourceTotal: merged[config.field] ?? null } });
+        continue;
+      }
+      const values = mergedLines.map(line => {
+        for (const key of config.lineKeys) {
+          const parsed = parseConfiguredWeight(line?.[key]);
+          if (parsed !== null) return parsed;
+        }
+        return null;
+      });
+      if (!values.length || values.some(value => value === null)) {
+        strategyApplications.push({ category: "weightAggregation", status: "not_applied", summary: config.label + ": missing or invalid line weights; header total was not recalculated.", details: { weight: config.key, lineCount: mergedLines.length, validLineWeights: values.filter(value => value !== null).length } });
+        continue;
+      }
+      const calculated = Math.round(values.reduce((sum, value) => sum + value, 0) * 1000) / 1000;
+      const sourceValue = merged[config.field] ?? null;
+      const parsedSource = parseConfiguredWeight(sourceValue);
+      const difference = parsedSource === null ? null : Math.round((calculated - parsedSource) * 1000) / 1000;
+      const conflict = difference !== null && Math.abs(difference) > 0.001;
+      const conflictMode = weightAggregation.conflict || "review";
+      const keepSource = conflict && conflictMode === "source";
+      if (sourceValue !== null && sourceValue !== undefined) merged[config.sourceField] = sourceValue;
+      if (!keepSource) merged[config.field] = calculated;
+      const audit = { category: "weightAggregation", field: config.field, weight: config.key, mode, conflictMode, before: sourceValue, calculated, after: keepSource ? sourceValue : calculated, difference, lineCount: values.length, sourceValuePreserved: sourceValue === null || sourceValue === undefined || merged[config.sourceField] === sourceValue, reason: "Customer-configured weight aggregation from goods-line weights." };
+      strategyChanges.push(audit);
+      if (conflict && conflictMode === "review") {
+        strategyApplications.push({ category: "weightAggregation", status: "exception", summary: config.label + ": calculated line total differs from source total; human review is required.", details: audit });
+        sourceDiscrepancies.push({ field: config.field, primaryValue: sourceValue, calculatedValue: calculated, difference, category: "weightAggregation" });
+      } else {
+        strategyApplications.push({ category: "weightAggregation", status: "applied", summary: keepSource ? config.label + ": source total retained per customer strategy." : config.label + ": header total calculated from item-line weights.", details: audit });
+      }
+    }
+
     // If only document-level totals are available, derive line weights using
     // the established apportionment rule rather than treating the lines as missing.
     // Prefer line value as the allocation basis; fall back to quantity, then equal split.
