@@ -667,7 +667,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text">{m.text.split("\n").map((x,j)=><React.Fragment key={j}>{x}{j<m.text.split("\n").length-1&&<br/>}</React.Fragment>)}</div><div className="weight-decision-actions"><button className="secondary" onClick={()=>decideWeights("invoice",m.conflicts)}>Use Commercial Invoice weights</button><button className="secondary" onClick={()=>decideWeights("packing_list",m.conflicts)}>Use Packing List weights</button><button className="secondary" onClick={()=>emailCustomerReview()}><Mail size={15}/> Email customer</button></div></div></div>;
    }
    if(m.type==="strategyAppliedSummary"){
-     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy execution report</b><div>{String(m.text || "").replace(/\\s*\\*{0,2}svg\\*{0,2}\\s*$/i, "")}</div></div></div></div>;
+     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy execution report</b><div>{String(m.text || "").replace(/\s*\*{0,2}svg\*{0,2}\s*$/i, "")}</div></div></div></div>;
    }
    if(m.type==="customsEntrySummary"&&m.summary){
      const s=m.summary;
