@@ -9,7 +9,7 @@ export function buildWorkingCustomsRecord(pack, customerStrategy=null){
     const strategy=customerStrategy||getCustomerStrategy(pack?.customer);
     if(!invoiceDoc){return applyCustomerStrategyRules(primary,strategy).record;}
 
-    const invoice={...primary};
+    const invoice={...(invoiceDoc?.extraction||{}),...primary};
     const isMissing=v=>v===undefined||v===null||v==="";
     ["countryOfExport","sourceCountryOfDestination","exporterCountryIso","consigneeCountryIso"].forEach(field=>{
       if(!isMissing(invoice[field])) invoice[field]=normalizeCountryCode(invoice[field]);
