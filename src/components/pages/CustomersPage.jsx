@@ -29,6 +29,7 @@ const DEFAULT_STRATEGY={
   instructions:"",
   requiredFields:[],
   weightHandling:"ask_user",
+  weightAggregation:{net:"none",gross:"none",conflict:"review"},
   emailFields:[],
   validationRules:[],
   extractionRules:[],
@@ -45,6 +46,11 @@ function cloneStrategy(strategy){
     ...(strategy||{}),
     instructions:typeof strategy?.instructions==="string"?strategy.instructions:"",
     weightHandling:["ask_user","invoice","packing_list"].includes(strategy?.weightHandling)?strategy.weightHandling:"ask_user",
+    weightAggregation:{
+      net:["none","sum_lines","document_total"].includes(strategy?.weightAggregation?.net)?strategy.weightAggregation.net:"none",
+      gross:["none","sum_lines","document_total"].includes(strategy?.weightAggregation?.gross)?strategy.weightAggregation.gross:"none",
+      conflict:["review","source","calculated"].includes(strategy?.weightAggregation?.conflict)?strategy.weightAggregation.conflict:"review"
+    },
     emailFields:Array.isArray(strategy?.emailFields)?[...strategy.emailFields]:[],
     validationRules:Array.isArray(strategy?.validationRules)?[...strategy.validationRules]:[],
     extractionRules:Array.isArray(strategy?.extractionRules)?[...strategy.extractionRules]:[],
@@ -998,6 +1004,50 @@ function StrategySection({
             placeholder="e.g. packing_list, commercial_invoice"
             aria-label="Document source priority"
           />
+        </div>
+
+        <div className="strategy-v1-card">
+          <div className="strategy-v1-card-head">
+            <div>
+              <strong>Weight aggregation</strong>
+              <span>Choose independently how this customer's net and gross header weights are handled. Defaults preserve current behaviour.</span>
+            </div>
+          </div>
+          <div className="strategy-v1-weight-grid">
+            <label className="field">
+              <span>Net weight</span>
+              <select
+                value={strategy.weightAggregation?.net||"none"}
+                onChange={event=>setStrategy(current=>({...current,weightAggregation:{net:"none",gross:"none",conflict:"review",...(current.weightAggregation||{}),net:event.target.value}}))}
+              >
+                <option value="none">Do not aggregate automatically</option>
+                <option value="sum_lines">Sum item-line net weights</option>
+                <option value="document_total">Use document-level total only</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Gross weight</span>
+              <select
+                value={strategy.weightAggregation?.gross||"none"}
+                onChange={event=>setStrategy(current=>({...current,weightAggregation:{net:"none",gross:"none",conflict:"review",...(current.weightAggregation||{}),gross:event.target.value}}))}
+              >
+                <option value="none">Do not aggregate automatically</option>
+                <option value="sum_lines">Sum item-line gross weights</option>
+                <option value="document_total">Use document-level total only</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>When totals conflict</span>
+              <select
+                value={strategy.weightAggregation?.conflict||"review"}
+                onChange={event=>setStrategy(current=>({...current,weightAggregation:{net:"none",gross:"none",conflict:"review",...(current.weightAggregation||{}),conflict:event.target.value}}))}
+              >
+                <option value="review">Use calculated total and flag for review</option>
+                <option value="source">Keep source total and flag in audit</option>
+                <option value="calculated">Use calculated total and record difference</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="strategy-v1-card">
