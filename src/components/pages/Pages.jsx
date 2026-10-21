@@ -17,6 +17,49 @@ import { formatReceivedDateTime, getPackColumnValue, getPackCustomerLabel, getPa
 
 
 
+function buildPlainEnglishStrategySummary(workingData, invoiceDoc) {
+  const applications = Array.isArray(workingData?.customerStrategyApplications) ? workingData.customerStrategyApplications : [];
+  const messages = [];
+  const value = amount => {
+    const number = Number(amount);
+    const currency = String(workingData?.currency || invoiceDoc?.extraction?.currency || "GBP").toUpperCase();
+    return Number.isFinite(number) ? new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(number) : String(amount ?? "");
+  };
+  const weightApplications = applications.filter(item => item?.category === "weightAggregation" && item?.status === "applied");
+  const net = weightApplications.find(item => item?.details?.weight === "net");
+  const gross = weightApplications.find(item => item?.details?.weight === "gross");
+  if (net || gross) {
+    const usedPackingList = applications.some(item =>
+      item?.category === "sourcePriority" && Array.isArray(item?.details?.changes) &&
+      item.details.changes.some(change => /packing.list/i.test(String(change?.sourceFilename || "")))
+    );
+    const weightText = [];
+    if (net) weightText.push("net weight is " + net.details.after + " kg");
+    if (gross) weightText.push("gross weight is " + gross.details.after + " kg");
+    messages.push((usedPackingList ? "Using the packing list, " : "") + weightText.join(" and ") + ".");
+  }
+  const totalRule = workingData?.invoiceTotalRuleApplied;
+  if (totalRule?.workingInvoiceTotal !== undefined && totalRule?.workingInvoiceTotal !== null) {
+    const lineCount = Number(totalRule.lineCount) || 0;
+    messages.push("The working invoice total is " + value(totalRule.workingInvoiceTotal) +
+      (lineCount ? ", calculated from " + lineCount + " item lines." : "."));
+    const extracted = invoiceDoc?.extraction || {};
+    const sourceTotal = extracted.totalInvoicedAmount ?? extracted.totalAmountInvoiced ?? extracted.totalInvoiceValue;
+    if (sourceTotal !== undefined && sourceTotal !== null && sourceTotal !== "") {
+      const sourceNumber = Number(String(sourceTotal).replace(/,/g, ""));
+      const workingNumber = Number(totalRule.workingInvoiceTotal);
+      if (Number.isFinite(sourceNumber) && Number.isFinite(workingNumber) && Math.abs(sourceNumber - workingNumber) > 0.01) {
+        messages.push("The invoice shows " + value(sourceNumber) + ", which differs from the item-line total. I've kept the calculated total as the working value and flagged the difference for review.");
+      }
+    }
+  }
+  const unsupportedCount = applications.filter(item => item?.status === "unsupported").length;
+  if (unsupportedCount) messages.push(unsupportedCount + " validation " + (unsupportedCount === 1 ? "rule needs" : "rules need") +
+    " configuring in a supported format before " + (unsupportedCount === 1 ? "it can" : "they can") + " be applied.");
+  return messages.length ? messages.join(" ") : "Customer strategy checked. No changes were needed.";
+}
+
+
 function Review({pack,currentUserName,back,notify,onAssign,updatePack,validatePack,postToLCA,reprocessPack,persistPack,persistValidatedPack,recordHistory}){
  const [docUrls,setDocUrls]=useState({});
  const [chat,setChat]=useState("");
@@ -277,9 +320,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      },
      ...(Array.isArray(workingData.customerStrategyApplications)&&workingData.customerStrategyApplications.length?[{
        type:"strategyAppliedSummary",
-       text:"Customer strategy execution report:\n"+workingData.customerStrategyApplications.map(application=>"- ["+String(application.status||"unknown").toUpperCase()+"] "+(application.summary||application.rule||application.category||"Rule evaluated")+(application.details?": "+(typeof application.details==="string"?application.details:JSON.stringify(application.details)):"")).join("\n")+
-         "\nChanges recorded: "+(workingData.customerStrategyChanges||[]).length+"; exceptions raised: "+(workingData.customerStrategyExceptions||[]).length+". Unsupported rules are explicitly reported and require configuration or implementation before they can be considered applied."+
-         (workingData.invoiceTotalRuleApplied?"\nWorking invoice total: "+value(workingData.invoiceTotalRuleApplied.workingInvoiceTotal)+". Original source invoice total: "+value(workingData.invoiceTotalRuleApplied.sourceInvoiceTotal)+".":""),
+       text:buildPlainEnglishStrategySummary(workingData,invoiceDoc),
        persist:false
      }]:[]),
      {type:"validationSummary",checks:Array.isArray(pack.validationChecks)?pack.validationChecks:validateStandardCustomsRecord(pack.workingRecord||pack.extractedData||{}).checks,persist:false},
