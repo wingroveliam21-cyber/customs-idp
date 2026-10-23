@@ -84,6 +84,35 @@ test("processPack identifies an unknown customer after default-strategy extracti
   assert.ok(setup.history.some(event=>event.action==="customer_identified"));
 });
 
+test("document-extracted customer overrides an email/mailbox customer association",async()=>{
+  let loadedStrategyFor=null;
+  const setup=fixture({
+    pack:{customer:"Wrong Email Route Ltd",customerId:"customer-wrong"},
+    dependencies:{
+      listCustomers:async()=>[
+        {id:"customer-wrong",name:"Wrong Email Route Ltd",status:"active"},
+        {id:"customer-fenwick",name:"Fenwick Laboratory Supplies Ltd",status:"active"}
+      ],
+      loadCustomerStrategy:async(_organisationId,customerId)=>{
+        loadedStrategyFor=customerId;
+        return {instructions:"Fenwick saved strategy",weightHandling:"packing_list"};
+      },
+      extractDocument:async()=>({extraction:{
+        documentType:"commercial_invoice",
+        confidence:96,
+        exporter:"Fenwick Laboratory Supplies Ltd",
+        invoiceNumber:"FEN-TEST-1",
+        lines:[]
+      }})
+    }
+  });
+  const result=await processPack({organisationId:"org-1",packId:"PK-1",reason:"initial",actor:{type:"system"},dependencies:setup.dependencies});
+  assert.equal(result.customer,"Fenwick Laboratory Supplies Ltd");
+  assert.equal(result.customerId,"customer-fenwick");
+  assert.equal(result.customerIdentification.matchedBy,"exporter");
+  assert.equal(loadedStrategyFor,"customer-fenwick");
+});
+
 test("processPack retains successful documents when another extraction fails",async()=>{
   const setup=fixture({
     pack:{uploadedFiles:[
