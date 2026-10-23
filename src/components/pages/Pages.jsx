@@ -17,6 +17,56 @@ import { formatReceivedDateTime, getPackColumnValue, getPackCustomerLabel, getPa
 
 
 
+function applyStrategyWeightApportionment(pack, strategy) {
+  const next = JSON.parse(JSON.stringify(pack || {}));
+  const data = next.extractedData || (next.extractedData = {});
+  const record = next.workingRecord || data._workingRecord || {};
+  const docs = Array.isArray(data.documents) ? data.documents : [];
+  const invoiceDoc = docs.find(doc => doc?.extraction?.documentType === "commercial_invoice") || docs[0];
+  const invoice = { ...(invoiceDoc?.extraction || {}), ...data, ...record };
+  const lines = Array.isArray(record.lines) ? record.lines : Array.isArray(data.lines) ? data.lines : Array.isArray(invoice.lines) ? invoice.lines : [];
+  const instructions = String(strategy?.instructions || [
+    ...(Array.isArray(strategy?.extractionRules) ? strategy.extractionRules : []),
+    ...(Array.isArray(strategy?.fieldRules) ? strategy.fieldRules : [])
+  ].join(" "));
+  const wantsApportionment = strategy?.autoApplyWeightApportionment === true ||
+    /apportion|allocate|proportion|line.value|invoice.value/i.test(instructions);
+  if (!wantsApportionment || !lines.length) return { pack: next, applied: false };
+  const totalNet = Number(invoice.totalNetWeight ?? invoice.totalNetMass ?? invoice.netMassKg ?? invoice.netWeight);
+  const totalGross = Number(invoice.totalGrossWeight ?? invoice.totalGrossMass ?? invoice.grossMassKg ?? invoice.grossWeight);
+  const values = lines.map(line => Number(line.totalValue ?? line.lineValue ?? line.amount ?? line.value));
+  const totalValue = values.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+  if (!(totalValue > 0) || !Number.isFinite(totalNet) || !Number.isFinite(totalGross) || totalNet < 0 || totalGross < 0) {
+    return { pack: next, applied: false };
+  }
+  const weights = values.map(value => ({
+    net: Math.round((totalNet * value / totalValue) * 1000) / 1000,
+    gross: Math.round((totalGross * value / totalValue) * 1000) / 1000
+  }));
+  // Assign rounding remainder to the final line so line totals reconcile exactly to document totals.
+  if (weights.length) {
+    weights[weights.length - 1].net = Math.round((totalNet - weights.slice(0, -1).reduce((sum, item) => sum + item.net, 0)) * 1000) / 1000;
+    weights[weights.length - 1].gross = Math.round((totalGross - weights.slice(0, -1).reduce((sum, item) => sum + item.gross, 0)) * 1000) / 1000;
+  }
+  const updateLines = target => target.map((line, index) => ({
+    ...line,
+    netMassKg: weights[index].net,
+    grossMassKg: weights[index].gross
+  }));
+  if (Array.isArray(data.lines) && data.lines.length === lines.length) data.lines = updateLines(data.lines);
+  if (Array.isArray(record.lines) && record.lines.length === lines.length) record.lines = updateLines(record.lines);
+  if (next.workingRecord) next.workingRecord = record;
+  else if (data._workingRecord) data._workingRecord = record;
+  data.weightApportionmentDecision = {
+    status: "applied",
+    method: "customer strategy: net and gross weights apportioned by invoice line value",
+    appliedAt: new Date().toISOString(),
+    totalNetWeight: totalNet,
+    totalGrossWeight: totalGross
+  };
+  return { pack: next, applied: true, lineCount: lines.length, totalNet, totalGross };
+}
+
 function buildPlainEnglishStrategySummary(workingData, invoiceDoc) {
   const applications = Array.isArray(workingData?.customerStrategyApplications) ? workingData.customerStrategyApplications : [];
   const messages = [];
@@ -534,9 +584,12 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        nextData.customerStrategy=saveData.strategy.config||strategy;
        nextData.customerStrategyApplied=true;
        nextData.customerStrategyVersion=saveData.strategy.version||null;
-       const confirmation={type:"agent",text:"Customer strategy v"+String(saveData.strategy.version||"")+" was saved to "+customer.name+" and applied to this workingPack. It will be used automatically for future packs identified for this customer.",persist:true};
-       nextData.agentMessages=[...(nextData.agentMessages||[]),confirmation];
-       savedPack={...workingPack,customer:customer.name,customerId:customer.id,customerStrategy:saveData.strategy.config||strategy,customerStrategyApplied:true,customerStrategyVersion:saveData.strategy.version||null,extractedData:nextData,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
+       let strategyPack={...workingPack,customer:customer.name,customerId:customer.id,customerStrategy:saveData.strategy.config||strategy,customerStrategyApplied:true,customerStrategyVersion:saveData.strategy.version||null,extractedData:nextData};
+       const strategyExecution=applyStrategyWeightApportionment(strategyPack,saveData.strategy.config||strategy);
+       strategyPack=strategyExecution.pack;
+       const confirmation={type:"agent",text:"Customer strategy v"+String(saveData.strategy.version||"")+" was saved to "+customer.name+" and applied to this working pack."+(strategyExecution.applied?" I also apportioned net and gross weights across "+strategyExecution.lineCount+" goods lines by invoice line value and reconciled the totals.":"") +" It will be used automatically for future packs identified for this customer.",persist:true};
+       strategyPack.extractedData.agentMessages=[...(strategyPack.extractedData.agentMessages||[]),confirmation];
+       savedPack={...strategyPack,status:"Needs review",validationStatus:undefined,validationChecks:undefined,postedToLCAAt:undefined};
        {const persisted=await persistPack?.(savedPack);if(!persisted)throw new Error("The strategy was saved, but the pack update conflicted with another change.");savedPack=persisted;workingPack=persisted;}
        await recordHistory?.(savedPack,"strategy_applied","Customer strategy saved and applied by Review Agent.",null,{customerId:customer.id,customerName:customer.name,version:saveData.strategy.version||null},null,"system","Customs IDP Agent");
        reply=confirmation.text;
