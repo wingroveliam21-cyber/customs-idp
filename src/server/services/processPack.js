@@ -161,17 +161,41 @@ export async function processPack({organisationId,packId,reason,actor,dependenci
   const existingWarnings=Array.isArray(pack.extractedData?.warnings)?pack.extractedData.warnings:[];
   const documentWarnings=documents.filter(document=>document.error).map(document=>document.filename+": "+document.error);
   const warnings=[...existingWarnings,...documentWarnings];
-  let customerIdentification=pack.customerIdentification||null;
-  if(!customer){
-    const identified=identifyCustomer(customers,primary?.extraction);
-    customer=identified.customer;
-    customerIdentification=identified.identification;
-    if(customer){
-      pack={...pack,customer:customer.name,customerId:customer.id};
-      strategy=await deps.loadCustomerStrategy(organisationId,customer.id);
-    }else{
-      pack={...pack,customer:null,customerId:null};
-    }
+  // The extracted document is the source of truth for customer identity.
+  // Do not let an email route, mailbox mapping, or previously assigned customer
+  // override a customer identified from the commercial invoice.
+  const documentMatch=identifyCustomer(customers,primary?.extraction);
+  let customerIdentification=documentMatch.identification;
+  if(documentMatch.customer){
+    customer=documentMatch.customer;
+    pack={...pack,customer:customer.name,customerId:customer.id};
+    strategy=await deps.loadCustomerStrategy(organisationId,customer.id);
+  }else if(documentMatch.identification.ambiguous||documentMatch.identification.possibleMatch){
+    // Conflicting or likely document matches require confirmation; do not apply
+    // a pre-associated customer's strategy.
+    customer=null;
+    strategy=null;
+    pack={...pack,customer:null,customerId:null};
+  }else if(customer){
+    // Use the email/mailbox association only if document evidence cannot identify
+    // or suggest another customer.
+    customerIdentification={
+      exporterName:documentMatch.identification.exporterName||null,
+      importerName:documentMatch.identification.importerName||null,
+      matched:true,
+      matchedBy:"existing-association-fallback",
+      ambiguous:false,
+      possibleMatch:false,
+      candidates:[],
+      customerId:customer.id,
+      customerName:customer.name,
+      method:"document-first-fallback"
+    };
+    pack={...pack,customer:customer.name,customerId:customer.id};
+    strategy=strategy||await deps.loadCustomerStrategy(organisationId,customer.id);
+  }else{
+    customerIdentification=documentMatch.identification;
+    pack={...pack,customer:null,customerId:null};
   }
 
   const extractedData={
