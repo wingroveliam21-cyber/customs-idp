@@ -145,9 +145,22 @@ function buildPlainEnglishStrategySummary(workingData, invoiceDoc) {
       }
     }
   }
-  const unsupportedCount = applications.filter(item => item?.status === "unsupported").length;
-  if (unsupportedCount) messages.push(unsupportedCount + " validation " + (unsupportedCount === 1 ? "rule needs" : "rules need") +
-    " configuring in a supported format before " + (unsupportedCount === 1 ? "it can" : "they can") + " be applied.");
+  const unsupportedApplications = applications.filter(item => item?.status === "unsupported");
+  if (unsupportedApplications.length) {
+    messages.push(unsupportedApplications.length + " customer-strategy rule" + (unsupportedApplications.length === 1 ? " is" : "s are") +
+      " not executable in the current deterministic format. No unsupported rule was applied.");
+    const details = unsupportedApplications.map(item => {
+      const category = String(item.category || "strategy").replace(/([A-Z])/g, " $1").trim();
+      const configured = item.configuredRule;
+      const description = typeof configured === "string"
+        ? configured
+        : configured && typeof configured === "object"
+          ? JSON.stringify(configured)
+          : item.configuredType || "Rule " + (Number.isInteger(item.index) ? item.index + 1 : "");
+      return category + (Number.isInteger(item.index) ? " rule " + (item.index + 1) : "") + ": " + String(description || "Unsupported rule");
+    });
+    messages.push("Unsupported rules: " + details.join(" | "));
+  }
   return messages.length ? messages.join(" ") : "Customer strategy checked. No changes were needed.";
 }
 
