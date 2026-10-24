@@ -145,23 +145,44 @@ function buildPlainEnglishStrategySummary(workingData, invoiceDoc) {
       }
     }
   }
-  const unsupportedApplications = applications.filter(item => item?.status === "unsupported");
-  if (unsupportedApplications.length) {
-    messages.push(unsupportedApplications.length + " customer-strategy rule" + (unsupportedApplications.length === 1 ? " is" : "s are") +
-      " not executable in the current deterministic format. No unsupported rule was applied.");
-    const details = unsupportedApplications.map(item => {
+  if (applications.length) {
+    const count = status => applications.filter(item => item?.status === status).length;
+    const applied = count("applied");
+    const delegated = count("delegated");
+    const alreadySatisfied = count("passed") + count("no_change_needed");
+    const unsupported = count("unsupported");
+    const pending = count("pending_approval");
+    const exceptions = count("exception");
+    const notApplied = count("not_applied");
+    messages.push("Customer strategy execution: " + applications.length + " rule(s) evaluated — " +
+      applied + " applied, " + delegated + " delegated to existing logic, " + alreadySatisfied +
+      " already satisfied, " + unsupported + " unsupported, " + pending + " pending approval, " +
+      exceptions + " exceptions, " + notApplied + " not applied.");
+    const details = applications.map(item => {
       const category = String(item.category || "strategy").replace(/([A-Z])/g, " $1").trim();
-      const configured = item.configuredRule;
-      const description = typeof configured === "string"
-        ? configured
-        : configured && typeof configured === "object"
-          ? JSON.stringify(configured)
-          : item.configuredType || "Rule " + (Number.isInteger(item.index) ? item.index + 1 : "");
-      return category + (Number.isInteger(item.index) ? " rule " + (item.index + 1) : "") + ": " + String(description || "Unsupported rule");
+      const ruleName = category + (Number.isInteger(item.index) ? " rule " + (item.index + 1) : "");
+      const status = String(item.status || "unknown").replace(/_/g, " ");
+      const summary = String(item.summary || item.configuredType || "No execution detail recorded");
+      return ruleName + " [" + status + "]: " + summary;
     });
-    messages.push("Unsupported rules: " + details.join(" | "));
+    messages.push("Rule-by-rule results: " + details.join(" | "));
+    const unsupportedApplications = applications.filter(item => item?.status === "unsupported");
+    if (unsupportedApplications.length) {
+      messages.push(unsupportedApplications.length + " customer-strategy rule(s) are not executable in the current deterministic format. No unsupported rule was applied.");
+      const unsupportedDetails = unsupportedApplications.map(item => {
+        const category = String(item.category || "strategy").replace(/([A-Z])/g, " $1").trim();
+        const configured = item.configuredRule;
+        const description = typeof configured === "string"
+          ? configured
+          : configured && typeof configured === "object"
+            ? JSON.stringify(configured)
+            : item.configuredType || "Rule " + (Number.isInteger(item.index) ? item.index + 1 : "");
+        return category + (Number.isInteger(item.index) ? " rule " + (item.index + 1) : "") + ": " + String(description || "Unsupported rule");
+      });
+      messages.push("Unsupported rules: " + unsupportedDetails.join(" | "));
+    }
   }
-  return messages.length ? messages.join(" ") : "Customer strategy checked. No changes were needed.";
+  return messages.length ? messages.join(" ") : "Customer strategy checked; no execution details were recorded.";
 }
 
 
