@@ -11,6 +11,25 @@ const writePath=(object,path,value)=>{
 };
 const outcome=(category,status,summary,extra={})=>({category,status,summary,...extra});
 
+const classifyNarrativeRule=(category,rule)=>{
+  if(typeof rule!=="string")return null;
+  const text=rule.toLowerCase().replace(/\s+/g," ").trim();
+  const weightRule=/apportion|allocation|allocated/.test(text)&&/weight|line|invoice value|invoice total|share/.test(text);
+  if(category==="extractionRules"&&weightRule){
+    if(/invoice value|line value|total invoice value/.test(text)&&/share|proportion/.test(text))
+      return {feature:"weight_apportionment_basis",summary:"Recognised; line-value allocation is handled by the working-record weight apportionment engine."};
+    if(/net weight/.test(text)&&/calculat|apportion|share|multipl/.test(text))
+      return {feature:"net_weight_apportionment",summary:"Recognised; net-weight allocation is handled by the working-record weight apportionment engine."};
+    if(/gross weight/.test(text)&&/calculat|apportion|share|multipl/.test(text))
+      return {feature:"gross_weight_apportionment",summary:"Recognised; gross-weight allocation is handled by the working-record weight apportionment engine."};
+  }
+  if(category==="validationRules"&&/net|gross/.test(text)&&/weight|mass/.test(text)&&/sum|total|reconcil|equal/.test(text))
+    return {feature:text.includes("net")?"net_weight_reconciliation":"gross_weight_reconciliation",summary:"Recognised; reconciliation is checked against the working line and document totals."};
+  if(category==="validationRules"&&/round|decimal/.test(text)&&/weight|total|decimal|rounding/.test(text))
+    return {feature:"weight_rounding",summary:"Recognised; three-decimal rounding and total preservation are handled by the weight apportionment engine."};
+  return null;
+};
+
 export function customerStrategyRequiresApproval(strategy,action,field=null){
   const requirements=Array.isArray(strategy?.approvalRequirements)?strategy.approvalRequirements:[];
   return requirements.some(requirement=>{
@@ -25,7 +44,12 @@ export function applyCustomerStrategyRules(inputRecord,strategy={}){
   const record=cloneRecord(inputRecord),applications=[],changes=[],exceptions=[];
   for(const category of ["extractionRules","fieldRules"]){
     for(const [index,rule] of (Array.isArray(strategy[category])?strategy[category]:[]).entries()){
-      if(!rule||typeof rule!=="object"||Array.isArray(rule)){applications.push(outcome(category,"unsupported","Rule is narrative text, not an executable structured rule.",{index,configuredRule:rule}));continue;}
+      if(typeof rule==="string"){
+        const recognised=classifyNarrativeRule(category,rule);
+        if(recognised){applications.push(outcome(category,"delegated",recognised.summary,{index,configuredRule:rule,feature:recognised.feature}));continue;}
+        applications.push(outcome(category,"unsupported","Narrative rule does not match an implemented deterministic capability.",{index,configuredRule:rule}));continue;
+      }
+      if(!rule||typeof rule!=="object"||Array.isArray(rule)){applications.push(outcome(category,"unsupported","Rule is not an executable structured rule.",{index,configuredRule:rule}));continue;}
       const type=String(rule.type||rule.action||"").toLowerCase(),field=rule.field||rule.targetField||rule.target;
       const requiresApproval=rule.requiresApproval===true||customerStrategyRequiresApproval(strategy,type,field);
       if(requiresApproval&&["set_field","copy_if_missing","map_value"].includes(type)){
@@ -64,6 +88,11 @@ export function applyCustomerStrategyRules(inputRecord,strategy={}){
   }
   for(const category of ["validationRules","customValidations"]){
     for(const [index,rule] of (Array.isArray(strategy[category])?strategy[category]:[]).entries()){
+      if(typeof rule==="string"){
+        const recognised=classifyNarrativeRule(category,rule);
+        if(recognised){applications.push(outcome(category,"delegated",recognised.summary,{index,configuredRule:rule,feature:recognised.feature}));continue;}
+        applications.push(outcome(category,"unsupported","Narrative validation rule does not match an implemented deterministic capability.",{index,configuredRule:rule}));continue;
+      }
       if(!rule||typeof rule!=="object"||Array.isArray(rule)){applications.push(outcome(category,"unsupported","Validation rule is not a structured rule object.",{index,configuredRule:rule}));continue;}
       const type=String(rule.type||rule.ruleType||"").toLowerCase(),field=rule.field||rule.targetField,actual=readPath(record,field);
       if(["required","required_field"].includes(type)){
