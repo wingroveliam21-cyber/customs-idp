@@ -785,7 +785,26 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text">{m.text.split("\n").map((x,j)=><React.Fragment key={j}>{x}{j<m.text.split("\n").length-1&&<br/>}</React.Fragment>)}</div><div className="weight-decision-actions"><button className="secondary" onClick={()=>decideWeights("invoice",m.conflicts)}>Use Commercial Invoice weights</button><button className="secondary" onClick={()=>decideWeights("packing_list",m.conflicts)}>Use Packing List weights</button><button className="secondary" onClick={()=>emailCustomerReview()}><Mail size={15}/> Email customer</button></div></div></div>;
    }
    if(m.type==="strategyAppliedSummary"){
-     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy execution report</b><div>{String(m.text || "").replace(/\s*\*{0,2}svg\*{0,2}\s*$/i, "")}</div></div></div></div>;
+     const report=String(m.text || "").replace(/\s*\*{0,2}svg\*{0,2}\s*$/i, "");
+     const countMatch=report.match(/Customer strategy execution:\s*(\d+) rule\(s\) evaluated\s*[—-]\s*(\d+) applied,\s*(\d+) delegated to existing logic,\s*(\d+) already satisfied,\s*(\d+) unsupported,\s*(\d+) pending approval,\s*(\d+) exceptions,\s*(\d+) not applied\./i);
+     const getDetail=(label)=>{const match=report.match(new RegExp(label+"[^:]*:\\s*([^|]+)","i"));return match?.[1]?.trim()||"";};
+     const applied=Number(countMatch?.[2]||0),delegated=Number(countMatch?.[3]||0),alreadySatisfied=Number(countMatch?.[4]||0),unsupported=Number(countMatch?.[5]||0),pending=Number(countMatch?.[6]||0),exceptions=Number(countMatch?.[7]||0),notApplied=Number(countMatch?.[8]||0);
+     const shortReport=countMatch ? (
+       <div className="strategy-report-simple">
+         <p><b>{applied>0?"Weight apportionment completed":"Customer strategy checked"}</b></p>
+         <p>{applied>0?"The pack's working weights were updated using the customer strategy.":"No working data was changed by this strategy run."}</p>
+         <div className="strategy-report-counts">
+           <div><b>{countMatch[1]}</b><span>Rules checked</span></div>
+           <div><b>{unsupported}</b><span>Unsupported</span></div>
+         </div>
+         <p>{delegated} rules handled by existing logic; {alreadySatisfied} already satisfied{pending?"; "+pending+" awaiting approval":""}{exceptions?"; "+exceptions+" exceptions":""}{notApplied?"; "+notApplied+" not applied":""}.</p>
+         <details className="strategy-report-details">
+           <summary>View technical rule details</summary>
+           <div>{report.split("Rule-by-rule results:")[1]?.trim()||report}</div>
+         </details>
+       </div>
+     ) : <div>{report||"Execution details unavailable."}</div>;
+     return <div className="chat-message-row agent" key={i}><div className="chat-message-avatar"><Sparkles size={15}/></div><div className="chat-message-content"><div className="chat-message-text strategy-applied-summary"><b>Customer strategy results</b>{shortReport}</div></div></div>;
    }
    if(m.type==="customsEntrySummary"&&m.summary){
      const s=m.summary;
