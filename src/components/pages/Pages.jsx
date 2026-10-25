@@ -792,11 +792,11 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const shortReport=countMatch ? (
        <div className="strategy-report-simple">
          <p><b>{applied>0?"Weight apportionment completed":"Customer strategy checked"}</b></p>
-         <div className="strategy-report-counts">
-           <div className="strategy-report-count-row"><b>{countMatch[1]}</b><span>Rules checked</span></div>
-           <div className="strategy-report-count-row"><b>{unsupported}</b><span>Rules needing support</span></div>
-           <div className="strategy-report-count-row"><b>{delegated}</b><span>Rules handled automatically</span></div>
-           <div className="strategy-report-count-row"><b>{alreadySatisfied}</b><span>Rules already satisfied</span></div>
+         <div className="strategy-report-counts" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:"10px",marginTop:"14px",marginBottom:"14px"}}>
+           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules checked</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{countMatch[1]}</b></div>
+           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules needing support</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{unsupported}</b></div>
+           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules handled automatically</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{delegated}</b></div>
+           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules already satisfied</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{alreadySatisfied}</b></div>
          </div>
          {(pending>0||exceptions>0||notApplied>0)&&<p>{pending?pending+" awaiting approval":""}{pending&&exceptions?"; ":""}{exceptions?exceptions+" exceptions":""}{(pending||exceptions)&&notApplied?"; ":""}{notApplied?notApplied+" not applied":""}.</p>}
          <details className="strategy-report-details">
