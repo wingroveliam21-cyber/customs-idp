@@ -790,7 +790,15 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const getDetail=(label)=>{const match=report.match(new RegExp(label+"[^:]*:\\s*([^|]+)","i"));return match?.[1]?.trim()||"";};
      const applied=Number(countMatch?.[2]||0),delegated=Number(countMatch?.[3]||0),alreadySatisfied=Number(countMatch?.[4]||0),unsupported=Number(countMatch?.[5]||0),pending=Number(countMatch?.[6]||0),exceptions=Number(countMatch?.[7]||0),notApplied=Number(countMatch?.[8]||0);
      const promptOnly=(report.match(/Instructions\s*\[prompt only\]/gi)||[]).length;
-     const reportSegments=report.split("|").map(part=>part.trim()).filter(Boolean);
+     const reportSegments=report.split("|").flatMap(part=>{
+       const segment=part.trim();
+       if(!segment)return [];
+       // The execution summary can contain the first rule detail after "Rule-by-rule results:".
+       // Keep the summary out of outcome lists and extract only the actual rule-level detail.
+       const marker=segment.match(/Rule-by-rule results:\\s*/i);
+       if(/^Customer strategy execution:/i.test(segment))return marker?[segment.slice(marker.index+marker[0].length).trim()]:[];
+       return [segment];
+     }).filter(Boolean);
      const outcomeDetails=[
        {label:"Rules applied",count:applied,items:reportSegments.filter(part=>/\[applied\]/i.test(part))},
        {label:"Rules handled automatically",count:delegated,items:reportSegments.filter(part=>/\[delegated\]/i.test(part))},
