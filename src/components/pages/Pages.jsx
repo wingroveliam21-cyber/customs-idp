@@ -789,6 +789,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const countMatch=report.match(/Customer strategy execution:\s*(\d+) rule\(s\) evaluated\s*[—-]\s*(\d+) applied,\s*(\d+) delegated to existing logic,\s*(\d+) already satisfied,\s*(\d+) unsupported,\s*(\d+) pending approval,\s*(\d+) exceptions,\s*(\d+) not applied\./i);
      const getDetail=(label)=>{const match=report.match(new RegExp(label+"[^:]*:\\s*([^|]+)","i"));return match?.[1]?.trim()||"";};
      const applied=Number(countMatch?.[2]||0),delegated=Number(countMatch?.[3]||0),alreadySatisfied=Number(countMatch?.[4]||0),unsupported=Number(countMatch?.[5]||0),pending=Number(countMatch?.[6]||0),exceptions=Number(countMatch?.[7]||0),notApplied=Number(countMatch?.[8]||0);
+     const promptOnly=(report.match(/Instructions\s*\[prompt only\]/gi)||[]).length;
      const shortReport=countMatch ? (
        <div className="strategy-report-simple">
          <p><b>{applied>0?"Weight apportionment completed":"Customer strategy checked"}</b></p>
@@ -798,6 +799,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
            <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules needing support</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{unsupported}</b></div>
            <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules handled automatically</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{delegated}</b></div>
            <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules already satisfied</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{alreadySatisfied}</b></div>
+           {promptOnly>0&&<div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Prompt-only instructions</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{promptOnly}</b></div>}
          </div>
          {(pending>0||exceptions>0||notApplied>0)&&<p>{pending?pending+" awaiting approval":""}{pending&&exceptions?"; ":""}{exceptions?exceptions+" exceptions":""}{(pending||exceptions)&&notApplied?"; ":""}{notApplied?notApplied+" not applied":""}.</p>}
          <details className="strategy-report-details">
