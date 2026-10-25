@@ -809,7 +809,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
                  <span style={{display:"block",flex:"1 1 auto",minWidth:0,overflowWrap:"break-word",wordBreak:"normal"}}>{group.label}</span><b style={{display:"block",flex:"0 0 auto",minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{group.count}</b>
                </summary>
                <div style={{width:"100%",minWidth:0,boxSizing:"border-box",padding:"8px 0 4px 12px",lineHeight:1.6,overflowWrap:"anywhere"}}>
-                 {group.items.length ? <ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,index)=><li key={index}>{item}</li>)}</ul> : <span>No rule-level details were included in the execution report.</span>}
+                 {group.items.length ? <ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,index)=><li key={index}>{item.replace(/\\s*\\[(?:applied|delegated|already satisfied|unsupported|prompt only)\\]/gi,"")}</li>)}</ul> : <span>No rule-level details were included in the execution report.</span>}
                </div>
              </details>
            ))}
