@@ -812,14 +812,10 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
          <div className="strategy-report-counts" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:"10px",marginTop:"14px",marginBottom:"14px"}}>
            <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules checked</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{countMatch[1]}</b></div>
            {outcomeDetails.map(group => (
-             <details key={group.label} className="strategy-report-count-row" style={{display:"block",width:"100%",minWidth:0,boxSizing:"border-box",border:0}}>
-               <summary style={{display:"flex",width:"100%",minWidth:0,boxSizing:"border-box",alignItems:"center",justifyContent:"space-between",gap:"12px",cursor:"pointer",whiteSpace:"normal"}}>
-                 <span style={{display:"block",flex:"1 1 auto",minWidth:0,overflowWrap:"break-word",wordBreak:"normal"}}>{group.label}</span><b style={{display:"block",flex:"0 0 auto",minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{group.count}</b>
-               </summary>
-               <div style={{width:"100%",minWidth:0,boxSizing:"border-box",padding:"8px 0 4px 12px",lineHeight:1.6,overflowWrap:"anywhere"}}>
-                 {group.items.length ? <ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,index)=><li key={index}>{item.replace(/\s*\[(?:applied|delegated|already satisfied|no change needed|unsupported|prompt only)\]/gi,"").replace(/^instructions\s*:\s*/i,"")}</li>)}</ul> : <span>{group.label==="Rules already satisfied"?`${group.count} rule${group.count===1?" was":"s were"} already satisfied by the current data. The execution report did not include the individual rule names or descriptions.`:group.label==="Rules needing support"?"No rule-level support details were included in the execution report.":"No rule-level details were included in the execution report."}</span>}
-               </div>
-             </details>
+             <div key={group.label} className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",width:"100%",minWidth:0,boxSizing:"border-box"}}>
+               <span style={{flex:"1 1 auto",minWidth:0,overflowWrap:"break-word",wordBreak:"normal"}}>{group.label}</span>
+               <b style={{flex:"0 0 auto",minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{group.count}</b>
+             </div>
            ))}
          </div>
          {(pending>0||exceptions>0||notApplied>0)&&<p>{pending?pending+" awaiting approval":""}{pending&&exceptions?"; ":""}{exceptions?exceptions+" exceptions":""}{(pending||exceptions)&&notApplied?"; ":""}{notApplied?notApplied+" not applied":""}.</p>}
