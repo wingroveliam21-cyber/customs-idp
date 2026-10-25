@@ -793,10 +793,10 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        <div className="strategy-report-simple">
          <p><b>{applied>0?"Weight apportionment completed":"Customer strategy checked"}</b></p>
          <div className="strategy-report-counts">
-           <div><b>{countMatch[1]}</b><span>Rules checked</span></div>
-           <div><b>{unsupported}</b><span>Rules needing support</span></div>
-           <div><b>{delegated}</b><span>Rules handled automatically</span></div>
-           <div><b>{alreadySatisfied}</b><span>Rules already satisfied</span></div>
+           <div className="strategy-report-count-row"><b>{countMatch[1]}</b><span>Rules checked</span></div>
+           <div className="strategy-report-count-row"><b>{unsupported}</b><span>Rules needing support</span></div>
+           <div className="strategy-report-count-row"><b>{delegated}</b><span>Rules handled automatically</span></div>
+           <div className="strategy-report-count-row"><b>{alreadySatisfied}</b><span>Rules already satisfied</span></div>
          </div>
          {(pending>0||exceptions>0||notApplied>0)&&<p>{pending?pending+" awaiting approval":""}{pending&&exceptions?"; ":""}{exceptions?exceptions+" exceptions":""}{(pending||exceptions)&&notApplied?"; ":""}{notApplied?notApplied+" not applied":""}.</p>}
          <details className="strategy-report-details">
