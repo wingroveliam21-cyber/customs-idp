@@ -794,7 +794,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const outcomeDetails=[
        {label:"Rules applied",count:applied,items:reportSegments.filter(part=>/\[applied\]/i.test(part))},
        {label:"Rules handled automatically",count:delegated,items:reportSegments.filter(part=>/\[delegated\]/i.test(part))},
-       {label:"Rules already satisfied",count:alreadySatisfied,items:reportSegments.filter(part=>/\[already satisfied\]/i.test(part))},
+       {label:"Rules already satisfied",count:alreadySatisfied,items:reportSegments.filter(part=>/\[(?:already satisfied|no change needed)\]/i.test(part))},
        {label:"Rules needing support",count:unsupported,items:reportSegments.filter(part=>/\[unsupported\]/i.test(part))},
        {label:"Prompt-only instructions",count:promptOnly,items:reportSegments.filter(part=>/\[prompt only\]/i.test(part))}
      ].filter(group=>group.count>0);
@@ -809,7 +809,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
                  <span style={{display:"block",flex:"1 1 auto",minWidth:0,overflowWrap:"break-word",wordBreak:"normal"}}>{group.label}</span><b style={{display:"block",flex:"0 0 auto",minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{group.count}</b>
                </summary>
                <div style={{width:"100%",minWidth:0,boxSizing:"border-box",padding:"8px 0 4px 12px",lineHeight:1.6,overflowWrap:"anywhere"}}>
-                 {group.items.length ? <ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,index)=><li key={index}>{item.replace(/\s*\[(?:applied|delegated|already satisfied|unsupported|prompt only)\]/gi,"").replace(/^instructions\s*:\s*/i,"")}</li>)}</ul> : <span>{group.label==="Rules already satisfied"?`${group.count} rule${group.count===1?" was":"s were"} already satisfied by the current data. The execution report did not include the individual rule names or descriptions.`:group.label==="Rules needing support"?"No rule-level support details were included in the execution report.":"No rule-level details were included in the execution report."}</span>}
+                 {group.items.length ? <ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,index)=><li key={index}>{item.replace(/\s*\[(?:applied|delegated|already satisfied|no change needed|unsupported|prompt only)\]/gi,"").replace(/^instructions\s*:\s*/i,"")}</li>)}</ul> : <span>{group.label==="Rules already satisfied"?`${group.count} rule${group.count===1?" was":"s were"} already satisfied by the current data. The execution report did not include the individual rule names or descriptions.`:group.label==="Rules needing support"?"No rule-level support details were included in the execution report.":"No rule-level details were included in the execution report."}</span>}
                </div>
              </details>
            ))}
