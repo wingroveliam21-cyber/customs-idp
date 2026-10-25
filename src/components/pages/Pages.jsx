@@ -795,7 +795,7 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
        if(!segment)return [];
        // The execution summary can contain the first rule detail after "Rule-by-rule results:".
        // Keep the summary out of outcome lists and extract only the actual rule-level detail.
-       const marker=segment.match(/Rule-by-rule results:\\s*/i);
+       const marker=segment.match(/Rule-by-rule results:\s*/i);
        if(/^Customer strategy execution:/i.test(segment))return marker?[segment.slice(marker.index+marker[0].length).trim()]:[];
        return [segment];
      }).filter(Boolean);
