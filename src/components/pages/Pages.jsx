@@ -804,11 +804,11 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
          <div className="strategy-report-counts" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:"10px",marginTop:"14px",marginBottom:"14px"}}>
            <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules checked</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{countMatch[1]}</b></div>
            {outcomeDetails.map(group => (
-             <details key={group.label} className="strategy-report-count-row" style={{border:0}}>
-               <summary style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px",cursor:"pointer"}}>
-                 <span>{group.label}</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{group.count}</b>
+             <details key={group.label} className="strategy-report-count-row" style={{display:"block",width:"100%",minWidth:0,boxSizing:"border-box",border:0}}>
+               <summary style={{display:"flex",width:"100%",minWidth:0,boxSizing:"border-box",alignItems:"center",justifyContent:"space-between",gap:"12px",cursor:"pointer",whiteSpace:"normal"}}>
+                 <span style={{display:"block",flex:"1 1 auto",minWidth:0,overflowWrap:"break-word",wordBreak:"normal"}}>{group.label}</span><b style={{display:"block",flex:"0 0 auto",minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{group.count}</b>
                </summary>
-               <div style={{padding:"8px 0 4px 12px",lineHeight:1.6}}>
+               <div style={{width:"100%",minWidth:0,boxSizing:"border-box",padding:"8px 0 4px 12px",lineHeight:1.6,overflowWrap:"anywhere"}}>
                  {group.items.length ? <ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,index)=><li key={index}>{item}</li>)}</ul> : <span>No rule-level details were included in the execution report.</span>}
                </div>
              </details>
