@@ -790,6 +790,14 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
      const getDetail=(label)=>{const match=report.match(new RegExp(label+"[^:]*:\\s*([^|]+)","i"));return match?.[1]?.trim()||"";};
      const applied=Number(countMatch?.[2]||0),delegated=Number(countMatch?.[3]||0),alreadySatisfied=Number(countMatch?.[4]||0),unsupported=Number(countMatch?.[5]||0),pending=Number(countMatch?.[6]||0),exceptions=Number(countMatch?.[7]||0),notApplied=Number(countMatch?.[8]||0);
      const promptOnly=(report.match(/Instructions\s*\[prompt only\]/gi)||[]).length;
+     const reportSegments=report.split("|").map(part=>part.trim()).filter(Boolean);
+     const outcomeDetails=[
+       {label:"Rules applied",count:applied,items:reportSegments.filter(part=>/\[applied\]/i.test(part))},
+       {label:"Rules handled automatically",count:delegated,items:reportSegments.filter(part=>/\[delegated\]/i.test(part))},
+       {label:"Rules already satisfied",count:alreadySatisfied,items:reportSegments.filter(part=>/\[already satisfied\]/i.test(part))},
+       {label:"Rules needing support",count:unsupported,items:reportSegments.filter(part=>/\[unsupported\]/i.test(part))},
+       {label:"Prompt-only instructions",count:promptOnly,items:reportSegments.filter(part=>/\[prompt only\]/i.test(part))}
+     ].filter(group=>group.count>0);
      const shortReport=countMatch ? (
        <div className="strategy-report-simple">
          <p><b>{applied>0?"Weight apportionment completed":"Customer strategy checked"}</b></p>
@@ -802,6 +810,14 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
            {promptOnly>0&&<div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Prompt-only instructions</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{promptOnly}</b></div>}
          </div>
          {(pending>0||exceptions>0||notApplied>0)&&<p>{pending?pending+" awaiting approval":""}{pending&&exceptions?"; ":""}{exceptions?exceptions+" exceptions":""}{(pending||exceptions)&&notApplied?"; ":""}{notApplied?notApplied+" not applied":""}.</p>}
+         <div className="strategy-outcome-details" style={{display:"grid",gap:"8px",marginTop:"12px"}}>
+           {outcomeDetails.map((group,index)=><details key={group.label} style={{borderTop:"1px solid var(--border-color, #e5e7eb)",paddingTop:"8px"}}>
+             <summary style={{cursor:"pointer",fontWeight:600}}>{group.label} — {group.count}</summary>
+             <div style={{padding:"8px 0 4px 12px",lineHeight:1.6}}>
+               {group.items.length>0?<ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,itemIndex)=><li key={itemIndex}>{item}</li>)}</ul>:<span>No rule-level details were included in the execution report.</span>}
+             </div>
+           </details>)}
+         </div>
          <details className="strategy-report-details">
            <summary>View technical details</summary>
            <div>{report.split("Rule-by-rule results:")[1]?.trim()||report}</div>
