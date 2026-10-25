@@ -803,21 +803,19 @@ const documentRows=pack.uploadedFiles?.length?pack.uploadedFiles:[
          <p><b>{applied>0?"Weight apportionment completed":"Customer strategy checked"}</b></p>
          <div className="strategy-report-counts" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:"10px",marginTop:"14px",marginBottom:"14px"}}>
            <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules checked</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{countMatch[1]}</b></div>
-           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules applied</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{applied}</b></div>
-           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules needing support</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{unsupported}</b></div>
-           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules handled automatically</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{delegated}</b></div>
-           <div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Rules already satisfied</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{alreadySatisfied}</b></div>
-           {promptOnly>0&&<div className="strategy-report-count-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px"}}><span>Prompt-only instructions</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{promptOnly}</b></div>}
+           {outcomeDetails.map(group => (
+             <details key={group.label} className="strategy-report-count-row" style={{border:0}}>
+               <summary style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px",cursor:"pointer"}}>
+                 <span>{group.label}</span><b style={{minWidth:"2ch",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{group.count}</b>
+               </summary>
+               <div style={{padding:"8px 0 4px 12px",lineHeight:1.6}}>
+                 {group.items.length ? <ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,index)=><li key={index}>{item}</li>)}</ul> : <span>No rule-level details were included in the execution report.</span>}
+               </div>
+             </details>
+           ))}
          </div>
          {(pending>0||exceptions>0||notApplied>0)&&<p>{pending?pending+" awaiting approval":""}{pending&&exceptions?"; ":""}{exceptions?exceptions+" exceptions":""}{(pending||exceptions)&&notApplied?"; ":""}{notApplied?notApplied+" not applied":""}.</p>}
-         <div className="strategy-outcome-details" style={{display:"grid",gap:"8px",marginTop:"12px"}}>
-           {outcomeDetails.map((group,index)=><details key={group.label} style={{borderTop:"1px solid var(--border-color, #e5e7eb)",paddingTop:"8px"}}>
-             <summary style={{cursor:"pointer",fontWeight:600}}>{group.label} — {group.count}</summary>
-             <div style={{padding:"8px 0 4px 12px",lineHeight:1.6}}>
-               {group.items.length>0?<ul style={{margin:0,paddingLeft:"18px"}}>{group.items.map((item,itemIndex)=><li key={itemIndex}>{item}</li>)}</ul>:<span>No rule-level details were included in the execution report.</span>}
-             </div>
-           </details>)}
-         </div>
+
          <details className="strategy-report-details">
            <summary>View technical details</summary>
            <div>{report.split("Rule-by-rule results:")[1]?.trim()||report}</div>
